@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package phone_center;
+
+option go_package = "./phone_center";
+
+import "google/api/annotations.proto";
+
+// 手机数据中心服务
+service PhoneCenter {
+  // 获取快速换机JSON
+  rpc GetFastSwitchJson(GetFastSwitchJsonRequest) returns (GetFastSwitchJsonResponse) {
+    option (google.api.http) = {
+      post: "/v1/phone/GetFastSwitchJson"
+      body: "*"
+    };
+  }
+
+  rpc GetInstallApps(GetInstallAppsRequest) returns (GetInstallAppsResponse) {
+    option (google.api.http) = {
+      post: "/v1/phone/GetInstallApps"
+      body: "*"
+    };
+  }
+
+  rpc GetPhoneJsonByCpiUserInfo(GetPhoneJsonByCpiUserInfoRequest) returns (GetPhoneJsonByCpiUserInfoResponse) {
+    option (google.api.http) = {
+      post: "/v1/phone/GetPhoneJsonByCpiUserInfo"
+      body: "*"
+    };
+  }
+}
+
+message GetPhoneJsonByCpiUserInfoRequest {
+  Atom atom = 1;
+  CpiUserInfo cpi_user_info = 2;
+  string appId = 3;
+}
+
+message CpiUserInfo {
+  string gaid = 1;
+  string user_agent = 2;
+  string country = 3;
+  string lang_code = 4;
+  string timezone = 5;
+  string sdk = 6;
+  string build_id = 7;
+  string model = 8;
+  string device_static_info_md5 = 10;
+  string sim_operator = 11;
+  string sim_operator_name = 12;
+  string sim_carrier_name = 13;
+  string network = 14;
+  string system_locals = 15;
+  string source_tag = 17;
+}
+
+message GetPhoneJsonByCpiUserInfoResponse {
+  string phone_json = 1;
+  int64 duration_ms = 5; // 耗时（毫秒）
+}
+
+// 获取快速换机JSON请求
+message GetFastSwitchJsonRequest {
+  Atom atom = 1;
+  string sdk = 2;
+  string country_code = 3;
+  string app_id = 4;
+  bool need_install_apps = 5; // 是否包含安装的app列表
+}
+
+// 获取快速换机JSON响应
+message GetFastSwitchJsonResponse {
+  string phone_json = 1;
+  string gaid = 2;
+  string gaid_md5 = 3;
+  string source = 4;
+  int64 duration_ms = 5; // 耗时（毫秒）
+}
+
+// 原子信息
+message Atom {
+  string trace_id = 1;
+}
+
+message GetInstallAppsRequest {
+  Atom atom = 1;
+  string sdk = 2;
+  string country_code = 3;
+  string brand = 4;
+}
+
+message GetInstallAppsResponse {
+  repeated InstallApp system_apps = 1;
+  repeated InstallApp third_party_apps = 2;
+  int64 duration_ms = 5; // 耗时（毫秒）
+}
+
+message InstallApp {
+  string appName = 1;
+  string packageName = 2;
+  string versionName = 3;
+  int64 firstInstallTime = 4;
+  int64 lastUpdateTime = 5;
+  int64 versionCode = 6;
+}

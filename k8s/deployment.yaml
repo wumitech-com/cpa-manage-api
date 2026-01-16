@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cpa-manage-api
+  namespace: wumitech-cpa
+  labels:
+    app: cpa-manage-api
+    service: cpa-manage-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cpa-manage-api
+  template:
+    metadata:
+      labels:
+        app: cpa-manage-api
+        service: cpa-manage-api
+    spec:
+      containers:
+      - name: cpa-manage-api
+        image: uhub.service.ucloud.cn/wumitech.public/cpa-manage-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8081
+          name: http
+          protocol: TCP
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        - name: JAVA_OPTS
+          value: "-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+        volumeMounts:
+        - name: logs
+          mountPath: /app/logs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: logs
+        emptyDir: {}

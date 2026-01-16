@@ -1,0 +1,51 @@
+2025-10-16 00:00:00.067 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T00:00:00.067943500
+2025-10-16 01:00:00.071 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T01:00:00.071814
+2025-10-16 02:00:00.079 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T02:00:00.079493700
+2025-10-16 03:00:00.076 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T03:00:00.076849500
+2025-10-16 04:00:00.080 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T04:00:00.080436500
+2025-10-16 05:00:00.069 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T05:00:00.069056300
+2025-10-16 06:00:00.075 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T06:00:00.075270500
+2025-10-16 07:00:00.098 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T07:00:00.098308900
+2025-10-16 08:00:00.076 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T08:00:00.076158300
+2025-10-16 09:00:00.071 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T09:00:00.071044100
+2025-10-16 10:00:00.070 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T10:00:00.070468
+2025-10-16 10:44:45.995 [http-nio-8081-exec-2] DEBUG org.springframework.web.servlet.DispatcherServlet - GET "/", parameters={}
+2025-10-16 10:44:46.083 [http-nio-8081-exec-2] DEBUG o.s.w.servlet.view.ContentNegotiatingViewResolver - Selected 'text/html' given [text/html, application/xhtml+xml, image/avif, image/webp, image/apng, application/xml;q=0.9, */*;q=0.8, application/signed-exchange;v=b3;q=0.7]
+2025-10-16 10:44:46.084 [http-nio-8081-exec-2] DEBUG o.s.web.servlet.view.InternalResourceView - View name 'forward:', model {}
+2025-10-16 10:44:46.103 [http-nio-8081-exec-2] DEBUG o.s.web.servlet.view.InternalResourceView - Forwarding to [index.html]
+2025-10-16 10:44:46.117 [http-nio-8081-exec-2] DEBUG org.springframework.web.servlet.DispatcherServlet - "FORWARD" dispatch for GET "/index.html", parameters={}
+2025-10-16 10:44:46.125 [http-nio-8081-exec-2] DEBUG o.s.web.servlet.handler.SimpleUrlHandlerMapping - Mapped to ResourceHttpRequestHandler [classpath [META-INF/resources/], classpath [resources/], classpath [static/], classpath [public/], ServletContext [/]]
+2025-10-16 10:44:46.138 [http-nio-8081-exec-2] DEBUG org.springframework.web.servlet.DispatcherServlet - Exiting from "FORWARD" dispatch, status 304
+2025-10-16 10:44:46.141 [http-nio-8081-exec-2] DEBUG org.springframework.web.servlet.DispatcherServlet - Completed 304 NOT_MODIFIED
+2025-10-16 10:44:46.178 [http-nio-8081-exec-4] DEBUG org.springframework.web.servlet.DispatcherServlet - GET "/js/app.js", parameters={}
+2025-10-16 10:44:46.178 [http-nio-8081-exec-4] DEBUG o.s.web.servlet.handler.SimpleUrlHandlerMapping - Mapped to ResourceHttpRequestHandler [classpath [META-INF/resources/], classpath [resources/], classpath [static/], classpath [public/], ServletContext [/]]
+2025-10-16 10:44:46.181 [http-nio-8081-exec-4] DEBUG org.springframework.web.servlet.DispatcherServlet - Completed 304 NOT_MODIFIED
+2025-10-16 10:44:46.220 [http-nio-8081-exec-7] DEBUG org.springframework.web.servlet.DispatcherServlet - GET "/api/statistics/overview", parameters={}
+2025-10-16 10:44:46.221 [http-nio-8081-exec-7] DEBUG o.s.w.s.m.m.a.RequestMappingHandlerMapping - Mapped to com.cpa.controller.StatisticsController#getOverallStatistics()
+2025-10-16 10:44:46.227 [http-nio-8081-exec-7] INFO  com.cpa.controller.StatisticsController - 获取整体统计概览
+2025-10-16 10:44:47.363 [http-nio-8081-exec-7] DEBUG o.s.w.s.m.m.a.RequestResponseBodyMethodProcessor - Using 'application/json', given [*/*] and supported [application/json, application/*+json]
+2025-10-16 10:44:47.364 [http-nio-8081-exec-7] DEBUG o.s.w.s.m.m.a.RequestResponseBodyMethodProcessor - Writing [{data={needRegisterCount=111, needNurtureCount=36, nurtureRate=0.0, devicePoolStats={needRegisterCou (truncated)...]
+2025-10-16 10:44:47.419 [http-nio-8081-exec-7] DEBUG org.springframework.web.servlet.DispatcherServlet - Completed 200 OK
+2025-10-16 10:45:15.799 [http-nio-8081-exec-6] DEBUG org.springframework.web.servlet.DispatcherServlet - GET "/api/devices/pool?pageNum=1&pageSize=10", parameters={masked}
+2025-10-16 10:45:15.799 [http-nio-8081-exec-6] DEBUG o.s.w.s.m.m.a.RequestMappingHandlerMapping - Mapped to com.cpa.controller.DeviceController#getDevicePool(Integer, Integer, String, String, Integer)
+2025-10-16 10:45:16.439 [http-nio-8081-exec-6] DEBUG o.s.w.s.m.m.a.RequestResponseBodyMethodProcessor - Using 'application/json', given [*/*] and supported [application/json, application/*+json]
+2025-10-16 10:45:16.443 [http-nio-8081-exec-6] DEBUG o.s.w.s.m.m.a.RequestResponseBodyMethodProcessor - Writing [{total=0, current=1, pages=0, data=[TtAccountDataOutlook(id=2581, phoneId=tt_107_224_100_US_20251014 (truncated)...]
+2025-10-16 10:45:16.475 [http-nio-8081-exec-6] DEBUG org.springframework.web.servlet.DispatcherServlet - Completed 200 OK
+2025-10-16 10:45:22.001 [http-nio-8081-exec-8] DEBUG org.springframework.web.servlet.DispatcherServlet - GET "/api/devices/accounts?pageNum=1&pageSize=10", parameters={masked}
+2025-10-16 10:45:22.001 [http-nio-8081-exec-8] DEBUG o.s.w.s.m.m.a.RequestMappingHandlerMapping - Mapped to com.cpa.controller.DeviceController#getAccountLibrary(Integer, Integer, String, String, Integer, Integer)
+2025-10-16 10:45:22.665 [http-nio-8081-exec-8] DEBUG o.s.w.s.m.m.a.RequestResponseBodyMethodProcessor - Using 'application/json', given [*/*] and supported [application/json, application/*+json]
+2025-10-16 10:45:22.670 [http-nio-8081-exec-8] DEBUG o.s.w.s.m.m.a.RequestResponseBodyMethodProcessor - Writing [{total=0, current=1, pages=0, data=[TtAccountData(id=2421, phoneId=tt_107_224_2_US_20251014, phoneSe (truncated)...]
+2025-10-16 10:45:22.683 [http-nio-8081-exec-8] DEBUG org.springframework.web.servlet.DispatcherServlet - Completed 200 OK
+2025-10-16 11:00:00.078 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T11:00:00.078149
+2025-10-16 12:00:00.071 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T12:00:00.070254
+2025-10-16 13:00:00.074 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T13:00:00.074312
+2025-10-16 14:00:00.079 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T14:00:00.079714600
+2025-10-16 15:00:00.066 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T15:00:00.066437400
+2025-10-16 16:00:00.079 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T16:00:00.079999400
+2025-10-16 17:00:00.080 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T17:00:00.080077900
+2025-10-16 18:00:00.070 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T18:00:00.070685200
+2025-10-16 19:00:00.075 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T19:00:00.075453100
+2025-10-16 20:00:00.074 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T20:00:00.074167300
+2025-10-16 21:00:00.015 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T21:00:00.015021100
+2025-10-16 22:00:00.008 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T22:00:00.008647500
+2025-10-16 23:00:00.010 [scheduling-1] DEBUG com.cpa.service.TaskSchedulerService - 执行每小时任务检查，时间: 2025-10-16T23:00:00.010305200

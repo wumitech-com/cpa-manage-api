@@ -1,0 +1,21 @@
+2025-10-20 14:22:02.961 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - Starting CpaManageApiApplication using Java 17.0.1 with PID 46524 (D:\developProject\cpa-manage-api\target\classes started by sunxy in D:\developProject\cpa-manage-api)
+2025-10-20 14:22:02.964 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - The following 1 profile is active: "dev"
+2025-10-20 14:22:05.545 WARN  [main] org.hibernate.orm.deprecation - [?,?] - HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2025-10-20 14:22:05.548 WARN  [main] org.hibernate.orm.deprecation - [?,?] - HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
+2025-10-20 14:22:06.806 WARN  [main] o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - [?,?] - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-10-20 14:22:07.201 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - Started CpaManageApiApplication in 4.785 seconds (process running for 5.572)
+2025-10-20 14:22:36.844 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - Starting CpaManageApiApplication using Java 17.0.1 with PID 54724 (D:\developProject\cpa-manage-api\target\classes started by sunxy in D:\developProject\cpa-manage-api)
+2025-10-20 14:22:36.847 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - The following 1 profile is active: "dev"
+2025-10-20 14:22:39.408 WARN  [main] org.hibernate.orm.deprecation - [?,?] - HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2025-10-20 14:22:39.410 WARN  [main] org.hibernate.orm.deprecation - [?,?] - HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
+2025-10-20 14:22:40.878 WARN  [main] o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - [?,?] - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2025-10-20 14:22:41.330 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - Started CpaManageApiApplication in 5.03 seconds (process running for 6.114)
+2025-10-20 14:22:52.588 INFO  [http-nio-8081-exec-1] org.springframework.web.servlet.DispatcherServlet - [?,?] - Initializing Servlet 'dispatcherServlet'
+2025-10-20 14:22:52.590 INFO  [http-nio-8081-exec-1] org.springframework.web.servlet.DispatcherServlet - [?,?] - Completed initialization in 2 ms
+2025-10-20 14:22:52.838 INFO  [http-nio-8081-exec-8] com.cpa.controller.StatisticsController - [?,?] - 获取整体统计概览
+2025-10-20 14:23:07.712 INFO  [http-nio-8081-exec-6] com.cpa.controller.TaskController - [?,?] - 获取任务调度状态
+2025-10-20 14:23:10.142 INFO  [http-nio-8081-exec-7] com.cpa.controller.StatisticsController - [?,?] - 获取设备池统计信息
+2025-10-20 14:23:10.440 INFO  [http-nio-8081-exec-3] com.cpa.controller.StatisticsController - [?,?] - 获取账号库统计信息
+2025-10-20 14:23:10.695 INFO  [http-nio-8081-exec-10] com.cpa.controller.StatisticsController - [?,?] - 获取整体统计概览
+2025-10-20 14:23:15.130 INFO  [http-nio-8081-exec-9] com.cpa.controller.ScriptController - [?,?] - 查询注册脚本执行状态
+2025-10-20 14:23:16.760 INFO  [http-nio-8081-exec-1] com.cpa.controller.ScriptController - [?,?] - 查询编辑Bio脚本执行状态

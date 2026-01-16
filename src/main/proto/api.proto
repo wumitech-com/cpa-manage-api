@@ -1,0 +1,2345 @@
+syntax = "proto3";
+package api;
+
+import "proto/basic/basic.proto";
+import "proto/third_party/google/api/annotations.proto";
+option go_package = "github.com/wumitech-com/cpa-api/proto/api;api";
+
+service ApiService {
+  rpc AddActivateRecord(AddActivateRecordRequest)
+      returns (AddActivateRecordResponse) {
+    option (google.api.http) = {
+      post : "/AddActivateRecord"
+    };
+  }
+
+  rpc AddApp(AddAppRequest) returns (AddAppResponse) {
+    option (google.api.http) = {
+      post : "/AddApp"
+    };
+  }
+
+  rpc AddAppiumServer(AddAppiumServerRequest)
+      returns (AddAppiumServerResponse) {
+    option (google.api.http) = {
+      post : "/AddAppiumServer"
+    };
+  }
+
+  rpc AddDynamicIP(AddDynamicIPRequest) returns (AddDynamicIPResponse) {
+    option (google.api.http) = {
+      post : "/AddDynamicIP"
+    };
+  }
+  rpc UpdateDynamicIP(UpdateDynamicIPRequest)
+      returns (UpdateDynamicIPResponse) {
+    option (google.api.http) = {
+      post : "/UpdateDynamicIP"
+    };
+  }
+  rpc GetDynamicIP(GetDynamicIPRequest) returns (GetDynamicIPResponse) {
+    option (google.api.http) = {
+      post : "/GetDynamicIP"
+    };
+  }
+  rpc AddDynamicIPChannel(AddDynamicIPChannelRequest)
+      returns (AddDynamicIPChannelResponse) {
+    option (google.api.http) = {
+      post : "/AddDynamicIPChannel"
+    };
+  }
+  rpc UpdateDynamicIPChannel(UpdateDynamicIPChannelRequest)
+      returns (UpdateDynamicIPChannelResponse) {
+    option (google.api.http) = {
+      post : "/UpdateDynamicIPChannel"
+    };
+  }
+  rpc GetDynamicIPChannel(GetDynamicIPChannelRequest)
+      returns (GetDynamicIPChannelResponse) {
+    option (google.api.http) = {
+      post : "/GetDynamicIPChannel"
+    };
+  }
+  rpc FetchDynamicIPByCountry(FetchDynamicIPByCountryRequest)
+      returns (FetchDynamicIPByCountryResponse) {
+    option (google.api.http) = {
+      post : "/FetchDynamicIPByCountry"
+    };
+  }
+  rpc GetRandomIPConf(GetRandomIPConfRequest)
+      returns (GetRandomIPConfResponse) {
+    option (google.api.http) = {
+      post : "/GetRandomIPConf"
+    };
+  }
+  rpc GetRealDynamicIPByOffer(GetRealDynamicIPByOfferRequest)
+      returns (GetRealDynamicIPByOfferResponse) {
+    option (google.api.http) = {
+      post : "/GetRealDynamicIPByOffer"
+    };
+  }
+
+  rpc AddGAID(AddGAIDRequest) returns (AddGAIDResponse) {
+    option (google.api.http) = {
+      post : "/AddGAID"
+    };
+  }
+
+  rpc AddGlobalConfig(AddGlobalConfigRequest)
+      returns (AddGlobalConfigResponse) {
+    option (google.api.http) = {
+      post : "/AddGlobalConfig"
+    };
+  }
+
+  rpc AddOfferToBlacklist(AddOfferToBlacklistRequest)
+      returns (AddOfferToBlacklistResponse) {
+    option (google.api.http) = {
+      post : "/AddOfferToBlacklist"
+    };
+  }
+
+  rpc AddPhone(AddPhoneRequest) returns (AddPhoneResponse) {
+    option (google.api.http) = {
+      post : "/AddPhone"
+    };
+  }
+
+  rpc BatchAddPhone(BatchAddPhoneRequest) returns (BatchAddPhoneResponse) {
+    option (google.api.http) = {
+      post : "/BatchAddPhone"
+    };
+  }
+
+  rpc AddPhoneServer(AddPhoneServerRequest) returns (AddPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/AddPhoneServer"
+    };
+  }
+
+  rpc AddPlatform(AddPlatformRequest) returns (AddPlatformResponse) {
+    option (google.api.http) = {
+      post : "/AddPlatform"
+    };
+  }
+
+  rpc AddStaticIP(AddStaticIPRequest) returns (AddStaticIPResponse) {
+    option (google.api.http) = {
+      post : "/AddStaticIP"
+    };
+  }
+
+  rpc AddPaAnalysis(AddPaAnalysisRequest) returns (AddPaAnalysisResponse) {
+    option (google.api.http) = {
+      post : "/AddPaAnalysis"
+    };
+  }
+
+  rpc AddPlatformAccount(AddPlatformAccountRequest)
+      returns (AddPlatformAccountResponse) {
+    option (google.api.http) = {
+      post : "/AddPlatformAccount"
+    };
+  }
+
+  rpc AddOfferToWhitelist(AddOfferToWhitelistRequest)
+      returns (AddOfferToWhitelistResponse) {
+    option (google.api.http) = {
+      post : "/AddOfferToWhitelist"
+    };
+  }
+
+  rpc GetOfferWhitelist(GetOfferWhitelistRequest)
+      returns (GetOfferWhitelistResponse) {
+    option (google.api.http) = {
+      post : "/GetOfferWhitelist"
+    };
+  }
+
+  rpc RemoveOfferFromWhitelist(RemoveOfferFromWhitelistRequest)
+      returns (RemoveOfferFromWhitelistResponse) {
+    option (google.api.http) = {
+      post : "/RemoveOfferFromWhitelist"
+    };
+  }
+
+  rpc DoCronJob(DoCronJobRequest) returns (DoCronJobResponse) {
+    option (google.api.http) = {
+      post : "/DoCronJob"
+    };
+  }
+
+  rpc GetActivateTaskInfo(GetActivateTaskInfoRequest)
+      returns (GetActivateTaskInfoResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateTaskInfo"
+    };
+  }
+
+  rpc GetApp(GetAppRequest) returns (GetAppResponse) {
+    option (google.api.http) = {
+      post : "/GetApp"
+    };
+  }
+  rpc GetAllApp(GetAllAppRequest) returns (GetAllAppResponse) {
+    option (google.api.http) = {
+      post : "/GetAllApp"
+    };
+  }
+
+  rpc GetOffer(GetOfferRequest) returns (GetOfferResponse) {
+    option (google.api.http) = {
+      post : "/GetOffer"
+    };
+  }
+
+  rpc GetOfferCategories(GetOfferCategoriesRequest)
+      returns (GetOfferCategoriesResponse) {
+    option (google.api.http) = {
+      post : "/GetOfferCategories"
+    };
+  }
+
+  rpc GetOfferBlacklist(GetOfferBlacklistRequest)
+      returns (GetOfferBlacklistResponse) {
+    option (google.api.http) = {
+      post : "/GetOfferBlacklist"
+    };
+  }
+
+  rpc GetAllOfferBlacklist(GetAllOfferBlacklistRequest)
+      returns (GetAllOfferBlacklistResponse) {
+    option (google.api.http) = {
+      post : "/GetAllOfferBlacklist"
+    };
+  }
+
+  rpc GetPlatform(GetPlatformRequest) returns (GetPlatformResponse) {
+    option (google.api.http) = {
+      post : "/GetPlatform"
+    };
+  }
+
+  rpc GetAppiumServer(GetAppiumServerRequest)
+      returns (GetAppiumServerResponse) {
+    option (google.api.http) = {
+      post : "/GetAppiumServer"
+    };
+  }
+
+  rpc GetPhone(GetPhoneRequest) returns (GetPhoneResponse) {
+    option (google.api.http) = {
+      post : "/GetPhone"
+    };
+  }
+
+  rpc GetPhoneServer(GetPhoneServerRequest) returns (GetPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/GetPhoneServer"
+    };
+  }
+
+  rpc GetStaticIp(GetStaticIpRequest) returns (GetStaticIpResponse) {
+    option (google.api.http) = {
+      post : "/GetStaticIp"
+    };
+  }
+
+  rpc GetRetentionTaskInfo(GetRetentionTaskInfoRequest)
+      returns (GetRetentionTaskInfoResponse) {
+    option (google.api.http) = {
+      post : "/GetRetentionTaskInfo"
+    };
+  }
+
+  rpc GetRetentionTaskInfoV2(GetRetentionTaskInfoV2Request)
+      returns (GetRetentionTaskInfoV2Response) {
+    option (google.api.http) = {
+      post : "/GetRetentionTaskInfoV2"
+    };
+  }
+
+  rpc GetRetentionTaskInfoV3(GetRetentionTaskInfoV3Request)
+      returns (GetRetentionTaskInfoV3Response) {
+    option (google.api.http) = {
+      post : "/GetRetentionTaskInfoV3"
+    };
+  }
+
+  rpc RemoveOfferFromBlacklist(RemoveOfferFromBlacklistRequest)
+      returns (RemoveOfferFromBlacklistResponse) {
+    option (google.api.http) = {
+      post : "/RemoveOfferFromBlacklist"
+    };
+  }
+
+  rpc UpdateAppStatus(UpdateAppStatusRequest)
+      returns (UpdateAppStatusResponse) {
+    option (google.api.http) = {
+      post : "/UpdateAppStatus"
+    };
+  }
+
+  rpc UpdateOffer(UpdateOfferRequest) returns (UpdateOfferResponse) {
+    option (google.api.http) = {
+      post : "/UpdateOffer"
+    };
+  }
+
+  rpc UpdatePhone(UpdatePhoneRequest) returns (UpdatePhoneResponse) {
+    option (google.api.http) = {
+      post : "/UpdatePhone"
+    };
+  }
+
+  rpc UpdatePhoneStatus(UpdatePhoneStatusRequest)
+      returns (UpdatePhoneStatusResponse) {
+    option (google.api.http) = {
+      post : "/UpdatePhoneStatus"
+    };
+  }
+
+  rpc UpdatePhoneServer(UpdatePhoneServerRequest)
+      returns (UpdatePhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/UpdatePhoneServer"
+    };
+  }
+
+  rpc UpdateGAID(UpdateGAIDRequest) returns (UpdateGAIDResponse) {
+    option (google.api.http) = {
+      post : "/UpdateGAID"
+    };
+  }
+
+  rpc UpsertRetentionRecord(UpsertRetentionRecordRequest)
+      returns (UpsertRetentionRecordResponse) {
+    option (google.api.http) = {
+      post : "/UpsertRetentionRecord"
+    };
+  }
+
+  rpc UpdateGlobalConfig(UpdateGlobalConfigRequest)
+      returns (UpdateGlobalConfigResponse) {
+    option (google.api.http) = {
+      post : "/UpdateGlobalConfig"
+    };
+  }
+
+  rpc GetGlobalConfig(GetGlobalConfigRequest)
+      returns (GetGlobalConfigResponse) {
+    option (google.api.http) = {
+      post : "/GetGlobalConfig"
+    };
+  }
+
+  rpc UpdateAppiumStatus(UpdateAppiumStatusRequest)
+      returns (UpdateAppiumStatusResponse) {
+    option (google.api.http) = {
+      post : "/UpdateAppiumStatus"
+    };
+  }
+
+  rpc UpdateStaticIPInfo(UpdateStaticIPInfoRequest)
+      returns (UpdateStaticIPInfoResponse) {
+    option (google.api.http) = {
+      post : "/UpdateStaticIPInfo"
+    };
+  }
+
+  rpc UpdatePlatformStatus(UpdatePlatformStatusRequest)
+      returns (UpdatePlatformStatusResponse) {
+    option (google.api.http) = {
+      post : "/UpdatePlatformStatus"
+    };
+  }
+
+  // NurtureGAID
+  rpc AddNurtureGAIDPhone(AddNurtureGAIDPhoneRequest)
+      returns (AddNurtureGAIDPhoneResponse) {
+    option (google.api.http) = {
+      post : "/AddNurtureGAIDPhone"
+    };
+  }
+  rpc GetNurtureGAIDPhone(GetNurtureGAIDPhoneRequest)
+      returns (GetNurtureGAIDPhoneResponse) {
+    option (google.api.http) = {
+      post : "/GetNurtureGAIDPhone"
+    };
+  }
+  rpc UpdateNurtureGAIDPhone(UpdateNurtureGAIDPhoneRequest)
+      returns (UpdateNurtureGAIDPhoneResponse) {
+    option (google.api.http) = {
+      post : "/UpdateNurtureGAIDPhone"
+    };
+  }
+  rpc AddNurtureGAIDPhoneServer(AddNurtureGAIDPhoneServerRequest)
+      returns (AddNurtureGAIDPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/AddNurtureGAIDPhoneServer"
+    };
+  }
+  rpc GetNurtureGAIDPhoneServer(GetNurtureGAIDPhoneServerRequest)
+      returns (GetNurtureGAIDPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/GetNurtureGAIDPhoneServer"
+    };
+  }
+  rpc UpdateNurtureGAIDPhoneServer(UpdateNurtureGAIDPhoneServerRequest)
+      returns (UpdateNurtureGAIDPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/UpdateNurtureGAIDPhoneServer"
+    };
+  }
+  rpc AddNurtureGAIDTask(AddNurtureGAIDTaskRequest)
+      returns (AddNurtureGAIDTaskResponse) {
+    option (google.api.http) = {
+      post : "/AddNurtureGAIDTask"
+    };
+  }
+  rpc GetNurtureGAIDTaskStat(GetNurtureGAIDTaskStatRequest)
+      returns (GetNurtureGAIDTaskStatResponse) {
+    option (google.api.http) = {
+      post : "/GetNurtureGAIDTaskStat"
+    };
+  }
+  rpc GetGAIDStat(GetGAIDStatRequest) returns (GetGAIDStatResponse) {
+    option (google.api.http) = {
+      post : "/GetGAIDStat"
+    };
+  }
+
+  rpc RenewalStaticIP(RenewalStaticIPRequest)
+      returns (RenewalStaticIPResponse) {
+    option (google.api.http) = {
+      post : "/RenewalStaticIP"
+    };
+  }
+
+  // 统计数据
+  rpc GetActivateStatByCountry(GetActivateStatByCountryRequest)
+      returns (GetActivateStatByCountryResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatByCountry"
+    };
+  }
+  rpc GetActivateStatByPhoneServer(GetActivateStatByPhoneServerRequest)
+      returns (GetActivateStatByPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatByPhoneServer"
+    };
+  }
+  rpc GetActivateStatByOffer(GetActivateStatByOfferRequest)
+      returns (GetActivateStatByOfferResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatByOffer"
+    };
+  }
+  rpc GetActivateStatByPlatform(GetActivateStatByPlatformRequest)
+      returns (GetActivateStatByPlatformResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatByPlatform"
+    };
+  }
+  rpc GetActivateStatDetail(GetActivateStatDetailRequest)
+      returns (GetActivateStatDetailResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatDetail"
+    };
+  }
+
+  rpc GetActivateStatisticByOfferSummary(
+      GetActivateStatisticByOfferSummaryRequest)
+      returns (GetActivateStatisticByOfferSummaryResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatisticByOfferSummary"
+    };
+  }
+
+  rpc GetActivateStatisticByPhoneServerSummary(
+      GetActivateStatisticByPhoneServerSummaryRequest)
+      returns (GetActivateStatisticByPhoneServerSummaryResponse) {
+    option (google.api.http) = {
+      post : "/GetActivateStatisticByPhoneServerSummary"
+    };
+  }
+
+  rpc GetDailyCapByCountryAndPlatform(GetDailyCapByCountryAndPlatformRequest)
+      returns (GetDailyCapByCountryAndPlatformResponse) {
+    option (google.api.http) = {
+      post : "/GetDailyCapByCountryAndPlatform"
+    };
+  }
+
+  rpc DescribePhoneJob(DescribePhoneJobRequest)
+      returns (DescribePhoneJobResponse) {
+    option (google.api.http) = {
+      post : "/DescribePhoneJob"
+    };
+  }
+
+  rpc GetRetentionStatByPhoneServer(GetRetentionStatByPhoneServerRequest)
+      returns (GetRetentionStatByPhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/GetRetentionStatByPhoneServer"
+    };
+  }
+
+  rpc GetRetentionStatByOffer(GetRetentionStatByOfferRequest)
+      returns (GetRetentionStatByOfferResponse) {
+    option (google.api.http) = {
+      post : "/GetRetentionStatByOffer"
+    };
+  }
+
+  rpc GetRetentionStatDetail(GetRetentionStatDetailRequest)
+      returns (GetRetentionStatDetailResponse) {
+    option (google.api.http) = {
+      post : "/GetRetentionStatDetail"
+    };
+  }
+  rpc GetChartConversionDailyStatics(GetChartConversionDailyStaticsRequest)
+      returns (GetChartConversionDailyStaticsResponse) {
+    option (google.api.http) = {
+      post : "/GetChartConversionDailyStatics"
+    };
+  }
+
+  rpc GetChartBlockDailyStatics(GetChartBlockDailyStaticsRequest)
+      returns (GetChartBlockDailyStaticsResponse) {
+    option (google.api.http) = {
+      post : "/GetChartBlockDailyStatics"
+    };
+  }
+
+  rpc GetChartBlockDailyPaStatics(GetChartBlockDailyPaStaticsRequest)
+      returns (GetChartBlockDailyPaStaticsResponse) {
+    option (google.api.http) = {
+      post : "/GetChartBlockDailyPaStatics"
+    };
+  }
+
+  rpc GetChartBlockDailyPaByCountryStatics(
+      GetChartBlockDailyPaByCountryStaticsRequest)
+      returns (GetChartBlockDailyPaByCountryStaticsResponse) {
+    option (google.api.http) = {
+      post : "/GetChartBlockDailyPaByCountryStatics"
+    };
+  }
+
+  rpc GetChartAccountDailyByPlatformStatics(
+      GetChartAccountDailyByPlatformStaticsRequest)
+      returns (GetChartAccountDailyByPlatformStaticsResponse) {
+    option (google.api.http) = {
+      post : "/GetChartAccountDailyByPlatformStatics"
+    };
+  }
+
+  rpc CreatePhoneServer(CreatePhoneServerRequest)
+      returns (CreatePhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/CreatePhoneServer"
+    };
+  }
+  rpc DeletePhoneServer(DeletePhoneServerRequest)
+      returns (DeletePhoneServerResponse) {
+    option (google.api.http) = {
+      post : "/DeletePhoneServer"
+    };
+  }
+  rpc CreateTestDBDocument(CreateTestDBDocumentRequest)
+      returns (CreateTestDBDocumentResponse) {
+    option (google.api.http) = {
+      post : "/CreateTestDBDocument"
+    };
+  };
+  rpc UpdateTestDBDocument(UpdateTestDBDocumentRequest)
+      returns (UpdateTestDBDocumentResponse) {
+    option (google.api.http) = {
+      post : "/UpdateTestDBDocument"
+    };
+  };
+
+  rpc StopAppiumCpaProcess(StopAppiumCpaProcessRequest)
+      returns (StopAppiumCpaProcessResponse) {
+    option (google.api.http) = {
+      post : "/StopAppiumCpaProcess"
+    };
+  }
+
+  rpc ResetAppiumCpaProcess(ResetAppiumCpaProcessRequest)
+      returns (ResetAppiumCpaProcessResponse) {
+    option (google.api.http) = {
+      post : "/ResetAppiumCpaProcess"
+    };
+  }
+
+  rpc GetSummaryStatics(GetSummaryStaticsRequest)
+      returns (GetSummaryStaticsResponse) {
+    option (google.api.http) = {
+      post : "/GetSummaryStatics"
+    };
+  }
+
+  rpc AddAlarmMsg(AddAlarmMsgRequest) returns (AddAlarmMsgResponse) {
+    option (google.api.http) = {
+      post : "/AddAlarmMsg"
+    };
+  }
+
+  rpc GetAlarmMsg(GetAlarmMsgRequest) returns (GetAlarmMsgResponse) {
+    option (google.api.http) = {
+      post : "/GetAlarmMsg"
+    };
+  }
+
+  rpc ResolveAlarmMsg(ResolveAlarmMsgRequest)
+      returns (ResolveAlarmMsgResponse) {
+    option (google.api.http) = {
+      post : "/ResolveAlarmMsg"
+    };
+  }
+
+  rpc FarmTaskSuccessCallback(FarmTaskSuccessCallbackRequest)
+      returns (FarmTaskSuccessCallbackResponse) {
+    option (google.api.http) = {
+      post : "/FarmTaskSuccessCallback"
+    };
+  }
+
+  rpc FarmTaskFailedCallback(FarmTaskFailedCallbackRequest)
+      returns (FarmTaskFailedCallbackResponse) {
+    option (google.api.http) = {
+      post : "/FarmTaskFailedCallback"
+    };
+  }
+
+  // 插入养号任务
+  rpc CreateFarmTask(CreateFarmTaskRequest) returns (CreateFarmTaskResponse) {
+    option (google.api.http) = {
+      post : "/CreateFarmTask"
+    };
+  }
+  // 提升养号任务优先级
+  rpc PrioritizeFarmTask(PrioritizeFarmTaskRequest)
+      returns (PrioritizeFarmTaskResponse) {
+    option (google.api.http) = {
+      post : "/PrioritizeFarmTask"
+    };
+  }
+
+  // 开始养号任务
+  rpc StartFarmTask(StartFarmTaskRequest) returns (StartFarmTaskResponse) {
+    option (google.api.http) = {
+      post : "/StartFarmTask"
+    };
+  }
+
+  // 停止养号任务
+  rpc StopFarmTask(StopFarmTaskRequest) returns (StopFarmTaskResponse) {
+    option (google.api.http) = {
+      post : "/StopFarmTask"
+    };
+  }
+
+  // 获取激活记录
+  rpc GetInfoByClickID(GetInfoByClickIDRequest)
+      returns (GetInfoByClickIDResponse) {
+    option (google.api.http) = {
+      post : "/GetInfoByClickID"
+    };
+  }
+
+  rpc GetRandomGaidJsonByModelAndSDK(GetRandomGaidJsonByModelAndSDKRequest)
+      returns (GetRandomGaidJsonByModelAndSDKResponse) {
+    option (google.api.http) = {
+      post : "/GetRandomGaidJsonByModelAndSDK"
+    };
+  }
+
+  rpc GenNurtureGAIDFromSourceGAID(GenNurtureGAIDFromSourceGAIDRequest)
+      returns (GenNurtureGAIDFromSourceGAIDResponse) {
+    option (google.api.http) = {
+      post : "/GenNurtureGAIDFromSourceGAID"
+    };
+  }
+
+  rpc GetActivateTaskInfoV2(GetActivateTaskInfoV2Request)
+      returns (GetActivateTaskInfoV2Response) {
+    option (google.api.http) = {
+      post : "/GetActivateTaskInfoV2"
+    };
+  }
+
+  rpc CheckPhoneDeviceStatus(CheckPhoneDeviceStatusRequest)
+      returns (CheckPhoneDeviceStatusResponse) {
+    option (google.api.http) = {
+      post : "/CheckPhoneDeviceStatus"
+    };
+  }
+
+  rpc CheckPhoneDynamicNetwork(CheckPhoneDynamicNetworkRequest)
+      returns (CheckPhoneDynamicNetworkResponse) {
+    option (google.api.http) = {
+      post : "/CheckPhoneDynamicNetwork"
+    };
+  }
+
+  rpc ShutDownPhone(ShutDownPhoneRequest) returns (ShutDownPhoneResponse) {
+    option (google.api.http) = {
+      post : "/ShutDownPhone"
+    };
+  }
+
+  rpc GetMonthlyIncomeReport(GetMonthlyIncomeReportRequest)
+      returns (GetMonthlyIncomeReportResponse) {
+    option (google.api.http) = {
+      post : "/GetMonthlyIncomeReport"
+    };
+  }
+
+  rpc AddMonthlyIncomeReport(AddMonthlyIncomeReportRequest)
+      returns (AddMonthlyIncomeReportResponse) {
+    option (google.api.http) = {
+      post : "/AddMonthlyIncomeReport"
+    };
+  }
+
+  rpc GetRetentionRecordDetail(GetRetentionRecordDetailRequest)
+      returns (GetRetentionRecordDetailResponse) {
+    option (google.api.http) = {
+      post : "/GetRetentionRecordDetail"
+    };
+  }
+
+  rpc GetRetentionStrategy(GetRetentionStrategyRequest)
+      returns (GetRetentionStrategyResponse) {
+    option (google.api.http) = {
+      post : "/GetRetentionStrategy"
+    };
+  }
+
+  rpc ResetPhoneEnv(ResetPhoneEnvRequest) returns (ResetPhoneEnvResponse) {
+    option (google.api.http) = {
+      post : "/ResetPhoneEnv"
+    };
+  }
+
+  rpc SyncNoAdidOfferList(SyncNoAdidOfferListRequest)
+      returns (SyncNoAdidOfferListResponse) {
+    option (google.api.http) = {
+      post : "/SyncNoAdidOfferList"
+    };
+  }
+
+  rpc GetTTVideoData(GetTTVideoDataRequest) returns (GetTTVideoDataResponse) {
+    option (google.api.http) = {
+      post : "/GetTTVideoData"
+    };
+  }
+
+  rpc GetTTVideoLatestData(GetTTVideoLatestDataRequest)
+      returns (GetTTVideoLatestDataResponse) {
+    option (google.api.http) = {
+      post : "/GetTTVideoLatestData"
+    };
+  }
+
+  rpc GetTTAccountData(GetTTAccountDataRequest)
+      returns (GetTTAccountDataResponse) {
+    option (google.api.http) = {
+      post : "/GetTTAccountData"
+    };
+  }
+
+  // EmailAccount 邮箱账号管理
+  rpc AddEmailAccount(AddEmailAccountRequest)
+      returns (AddEmailAccountResponse) {
+    option (google.api.http) = {
+      post : "/AddEmailAccount"
+    };
+  }
+
+  rpc GetEmailAccount(GetEmailAccountRequest)
+      returns (GetEmailAccountResponse) {
+    option (google.api.http) = {
+      post : "/GetEmailAccount"
+    };
+  }
+
+  rpc UpdateEmailAccount(UpdateEmailAccountRequest)
+      returns (UpdateEmailAccountResponse) {
+    option (google.api.http) = {
+      post : "/UpdateEmailAccount"
+    };
+  }
+
+  rpc DeleteEmailAccount(DeleteEmailAccountRequest)
+      returns (DeleteEmailAccountResponse) {
+    option (google.api.http) = {
+      post : "/DeleteEmailAccount"
+    };
+  }
+
+  rpc FetchAvailableEmailAccount(FetchAvailableEmailAccountRequest)
+      returns (FetchAvailableEmailAccountResponse) {
+    option (google.api.http) = {
+      post : "/FetchAvailableEmailAccount"
+    };
+  }
+
+  rpc DeleteStaticIP(DeleteStaticIPRequest) returns (DeleteStaticIPResponse) {
+    option (google.api.http) = {
+      post : "/DeleteStaticIP"
+    };
+  }
+
+  rpc VerifyIPLocation(VerifyIPLocationRequest)
+      returns (VerifyIPLocationResponse) {
+    option (google.api.http) = {
+      post : "/VerifyIPLocation"
+    };
+  }
+
+  rpc GetDailyCapByCountry(GetDailyCapByCountryRequest)
+      returns (GetDailyCapByCountryResponse) {
+    option (google.api.http) = {
+      post : "/GetDailyCapByCountry"
+    };
+  }
+}
+
+message ResetPhoneEnvRequest {
+  string biz = 1;
+  string phone_id = 10;
+  string phone_server_ip = 20;
+  string country = 30;
+  string sdk = 40;
+  string image_path = 50;
+  string gaid_tag = 60;
+  string dynamic_ip_channel = 70;
+  string static_ip_channel = 80;
+}
+
+message ResetPhoneEnvResponse {
+  basic.ResponseStatus response_status = 1;
+  string real_ip = 2;
+}
+
+message CreateFarmTaskRequest {
+  // string sdk = 1;
+  string proportion = 1;
+  string country = 2;
+  uint32 count = 3;
+  uint32 priority = 4;
+  string tag = 5;
+}
+
+message CreateFarmTaskResponse {
+  basic.ResponseStatus response_status = 1;
+  message TaskResult {
+    string sdk = 1;
+    uint32 success_count = 2; // 创建成功的任务数
+  }
+  repeated TaskResult task_result = 2; // 创建成功的任务结果
+}
+
+message PrioritizeFarmTaskRequest {
+  string sdk = 1;
+  string country = 2;
+  uint32 count = 3;
+  uint32 priority = 4;
+  string tag = 5;
+}
+
+message PrioritizeFarmTaskResponse {
+  basic.ResponseStatus response_status = 1;
+  uint32 success_count = 2; // 提升优先级的任务数
+}
+
+message FarmTaskSuccessCallbackRequest {
+  string gaid = 1;
+  string pkg_name = 2;
+}
+
+message FarmTaskSuccessCallbackResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message FarmTaskFailedCallbackRequest {
+  string gaid = 1;
+  string pkg_name = 2;
+}
+
+message FarmTaskFailedCallbackResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message StartFarmTaskRequest {}
+
+message StartFarmTaskResponse { basic.ResponseStatus response_status = 1; }
+
+message StopFarmTaskRequest {}
+
+message StopFarmTaskResponse { basic.ResponseStatus response_status = 1; }
+
+message AddActivateRecordRequest {
+  string offer_id = 10;
+  string click_id = 20;
+  string phone_id = 30;
+  int64 do_cpi_time = 40;
+  optional bool cpi_result = 50;
+  int64 do_cpa_time = 60;
+  optional bool cpa_result = 70;
+  int64 started_at = 80;
+  string phone_server_id = 90;
+  string dynamic_ip = 91;
+  string static_ip = 92;
+  string detail_json = 100;
+}
+
+message AddActivateRecordResponse { basic.ResponseStatus response_status = 1; }
+
+message AddAppRequest {
+  string app_name = 1;
+  string pkg_name = 2;
+  string main_activity = 3;
+  string country = 4;
+  string app_version = 5;
+  uint32 status = 6;
+  string note = 7;
+}
+
+message AddAppResponse { basic.ResponseStatus response_status = 1; }
+
+message AddAppiumServerRequest {
+  string name = 1;
+  string host_id = 2;
+  string private_ip = 3;
+  string public_ip = 4;
+  uint32 status = 5;
+  string note = 6;
+}
+
+message AddAppiumServerResponse { basic.ResponseStatus response_status = 1; }
+
+message AddDynamicIPRequest {
+  string ip_channel = 1;
+  string country = 2;
+  string url = 3;
+  uint32 port = 4;
+  string user_name = 5;
+  string password = 6;
+  string note = 7;
+  uint32 status = 8;
+}
+
+message AddDynamicIPResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdateDynamicIPRequest {
+  uint64 id = 1;
+  string url = 3;
+  uint32 port = 4;
+  string user_name = 5;
+  string password = 6;
+  string note = 7;
+  optional uint32 status = 8;
+}
+
+message UpdateDynamicIPResponse { basic.ResponseStatus response_status = 1; }
+
+message GetDynamicIPRequest {
+  string ip_channel = 1;
+  string country = 2;
+  optional uint32 status = 3;
+  uint32 offset = 4;
+  uint32 limit = 5;
+}
+
+message GetDynamicIPResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.DynamicIP data_set = 2;
+  uint32 total_count = 3;
+}
+
+message AddDynamicIPChannelRequest {
+  string name = 1;
+  string url = 10;
+  uint32 port = 20;
+  string user_name = 30;
+  string password = 40;
+  repeated string countries = 50; // 可用国家
+  uint32 status = 60;
+  string note = 70;
+}
+
+message AddDynamicIPChannelResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message UpdateDynamicIPChannelRequest {
+  string name = 1;
+  string url = 10;
+  uint32 port = 20;
+  string user_name = 30;
+  string password = 40;
+  repeated string countries = 50; // 可用国家
+  optional uint32 status = 60;
+  string note = 70;
+}
+
+message UpdateDynamicIPChannelResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetDynamicIPChannelRequest {
+  repeated string channel_names = 10;
+  repeated string countries = 20;
+  optional uint32 status = 30;
+  uint32 offset = 40;
+  uint32 limit = 50;
+}
+
+message GetDynamicIPChannelResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.DynamicIPChannel data_set = 2;
+  uint32 total_count = 3;
+}
+
+message FetchDynamicIPByCountryRequest { string country = 1; }
+
+message FetchDynamicIPByCountryResponse {
+  basic.ResponseStatus response_status = 1;
+  basic.DynamicIP dynamicIP = 2;
+}
+
+message GetRealDynamicIPByOfferRequest {
+  string ip_channel = 1;
+  string offer_id = 2;
+}
+
+message GetRealDynamicIPByOfferResponse {
+  basic.ResponseStatus response_status = 1;
+  basic.DynamicIP ip = 2;
+}
+
+message AddGAIDRequest {
+  string gaid = 1;
+  string gaid_country = 2;
+  string gaid_json_data = 3;
+  uint32 sdk = 4;
+  uint32 status = 5;
+}
+
+message AddGAIDResponse { basic.ResponseStatus response_status = 1; }
+
+message AddGlobalConfigRequest {
+  string gaid = 1;
+  string gaid_country = 2;
+  string gaid_json_data = 3;
+  string sdk = 4;
+  uint32 status = 5;
+}
+
+message AddGlobalConfigResponse { basic.ResponseStatus response_status = 1; }
+
+message AddOfferToBlacklistRequest {
+  string offer_id = 1;
+  string block_reason = 2;
+  string note = 3;
+}
+
+message AddOfferToBlacklistResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message AddPhoneRequest {
+  string phone_id = 1;
+  string phone_server_id = 2;
+  uint32 sdk = 3;
+  optional uint32 phone_status = 4;
+}
+
+message AddPhoneResponse { basic.ResponseStatus response_status = 1; }
+
+message BatchAddPhoneRequest {
+  string phone_id_prefix = 10;
+  uint32 phone_count = 20;
+  string phone_server_id = 30;
+}
+
+message BatchAddPhoneResponse { basic.ResponseStatus response_status = 1; }
+
+message AddPhoneServerRequest {
+  string server_id = 1;
+  string host_id = 2;
+  string private_ip = 3;
+  string public_ip = 4;
+  uint32 daily_max_cap = 5;
+  string xray_server_ip = 6;
+  string appium_server_ip = 7;
+  basic.PhoneServer.Strategy strategy = 8;
+  uint32 status = 9;
+  string note = 10;
+}
+
+message AddPhoneServerResponse { basic.ResponseStatus response_status = 1; }
+
+message AddPlatformRequest {
+  string name = 1;
+  string offer_id_url = 2;
+  uint32 status = 3;
+  string note = 4;
+}
+
+message AddPlatformResponse { basic.ResponseStatus response_status = 1; }
+
+message AddStaticIPRequest {
+  string ip_channel = 1;
+  string ip_type = 2;
+  string country = 3;
+  string city = 4;
+  string url = 5;
+  uint32 port = 6;
+  string user_name = 7;
+  string password = 8;
+  int64 expiration_timestamp = 9;
+  string note = 10;
+}
+
+message AddStaticIPResponse { basic.ResponseStatus response_status = 1; }
+
+message AddPaAnalysisRequest {
+  string attributed_touch_type = 1;
+  int64 attributed_touch_time = 2;
+  int64 install_time = 3;
+  int64 event_time = 4;
+  string event_name = 5;
+  string event_value = 6;
+  string ad_id = 7;
+  string region = 8;
+  string country_code = 9;
+  string state = 10;
+  string city = 11;
+  string postal_code = 12;
+  string dma = 13;
+  string ip = 14;
+  string operator = 15;
+  string carrier = 16;
+  string language = 17;
+  string appsflyer_id = 18;
+  string advertising_id = 19;
+  string device_category = 20;
+  string platform = 21;
+  string os_version = 22;
+  string app_version = 23;
+  string sdk_version = 24;
+  string app_id = 25;
+  string app_name = 26;
+  string is_retargeting = 27;
+  string retargeting_conversion_type = 28;
+  string is_primary_attribution = 29;
+  string attribution_lookback = 30;
+  string match_type = 31;
+  string user_agent = 32;
+  string http_referrer = 33;
+  string device_model = 34;
+  string rejected_reason = 35;
+  string rejected_reason_value = 36;
+  int64 detection_date = 37;
+  string fraud_reason = 38;
+  string fraud_sub_reason = 39;
+}
+
+message AddPaAnalysisResponse { basic.ResponseStatus response_status = 1; }
+
+message AddPlatformAccountRequest {
+  string offer_id = 1;
+  string offer_name = 2;
+  string platform_name = 3;
+  string account_date = 4;
+  string settlement_ratio = 5;
+}
+
+message AddPlatformAccountResponse { basic.ResponseStatus response_status = 1; }
+
+message AddOfferToWhitelistRequest { repeated string offer_ids = 1; }
+
+message AddOfferToWhitelistResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetOfferWhitelistRequest {}
+
+message GetOfferWhitelistResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated string offer_ids = 2;
+}
+
+message RemoveOfferFromWhitelistRequest { repeated string offer_ids = 1; }
+
+message RemoveOfferFromWhitelistResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message DoCronJobRequest {
+  string job_name = 1;
+  string params = 2;
+}
+
+message DoCronJobResponse { basic.ResponseStatus response_status = 1; }
+
+message GetActivateTaskInfoRequest {
+  string offer_id = 1;
+  string appium_name = 2;
+  string phone_server_id = 3;
+}
+
+message GetActivateTaskInfoResponse {
+  basic.ResponseStatus response_status = 1;
+  string phone_server_ip = 10;
+  string phone_id = 20;
+  string sdk_version = 21;
+  string boot_time = 29; // GAID养号时使用的boot_time
+  string gaid = 30;
+  string base_url = 31;
+  string app_pkg_name = 40;
+  string app_main_activity = 50;
+  string install_version = 60;
+  string ip_conf = 70;
+  string country = 80;
+  string ctit = 90;
+  string xray_server_ip = 100;
+  basic.OfferInfo.OtherConf other_conf = 110;
+  string real_dynamic_ip = 120;
+}
+
+message GetAppRequest {
+  string country = 1;
+  optional uint32 status = 2;
+  optional uint32 offset = 3;
+  optional uint32 limit = 4;
+}
+
+message GetAppResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.App data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetAllAppRequest {
+  string pkgName = 1;
+  string country = 2;
+  optional uint32 offset = 3;
+  optional uint32 limit = 4;
+}
+
+message GetAllAppResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.App data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetOfferRequest {
+  repeated string offer_ids = 10;
+  repeated string pkg_names = 20;
+  string country = 30;
+  string platform = 40;
+  optional uint32 status = 50;
+  int64 created_after = 60;
+  int64 created_before = 70;
+  optional bool is_online = 80;
+  uint32 offset = 90;
+  uint32 limit = 100;
+}
+
+message GetOfferResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.OfferInfo data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetOfferCategoriesRequest { optional bool all_status = 10; }
+
+message GetOfferCategoriesResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.OfferCategory data_set = 2;
+}
+
+message GetOfferBlacklistRequest {
+  uint32 offset = 1;
+  uint32 limit = 2;
+}
+
+message GetOfferBlacklistResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.OfferBlacklist data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetAllOfferBlacklistRequest {
+  string offerId = 1;
+  optional uint32 offset = 2;
+  optional uint32 limit = 3;
+}
+
+message GetAllOfferBlacklistResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.OfferBlacklist data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetAppiumServerRequest {
+  optional uint32 status = 1;
+  uint32 offset = 2;
+  uint32 limit = 3;
+}
+
+message GetAppiumServerResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.AppiumServer data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetPlatformRequest {
+  optional uint32 status = 1;
+  uint32 offset = 2;
+  uint32 limit = 3;
+}
+
+message GetPlatformResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.Platform data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetPhoneRequest {
+  repeated string phone_ids = 1;
+  string phone_server_id = 2;
+  optional uint32 phone_status = 3;
+  optional uint32 cpa_status = 4;
+  optional uint32 retention_type = 5;
+  string retention_offer_id = 6;
+  uint32 sdk = 7;
+  uint32 offset = 8;
+  uint32 limit = 9;
+}
+
+message GetPhoneResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.Phone data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetPhoneServerRequest {
+  repeated string appium_server_ips = 1;
+  optional uint32 phone_server_status = 2;
+  uint32 offset = 3;
+  uint32 limit = 4;
+}
+
+message GetPhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.PhoneServer data_set = 2;
+  uint32 total_count = 3;
+}
+
+message GetRetentionTaskInfoRequest {
+  string offer_id = 1;
+  string phone_id = 2;
+}
+
+message GetRetentionTaskInfoResponse {
+  basic.ResponseStatus response_status = 1;
+  string offer_id = 10;
+  string phone_id = 20;
+  string phone_server_ip = 30;
+  string app_pkg_name = 40;
+  string app_main_activity = 50;
+  string ip_conf = 60;
+  string country = 70;
+  string xray_server_ip = 80;
+  uint32 cpa_status = 90;
+  uint32 retention_type = 100;
+  string real_dynamic_ip = 110;
+  uint32 retention_hours = 120;
+}
+
+message GetRetentionTaskInfoV2Request {
+  string offer_id = 1;
+  string phone_id = 2;
+}
+
+message GetRetentionTaskInfoV2Response {
+  basic.ResponseStatus response_status = 1;
+  string offer_id = 10;
+  string phone_id = 20;
+  string phone_server_ip = 30;
+  string app_pkg_name = 40;
+  string app_main_activity = 50;
+  string ip_conf = 60;
+  string country = 70;
+  string xray_server_ip = 80;
+  uint32 cpa_status = 90;
+  uint32 retention_type = 100;
+  string real_dynamic_ip = 110;
+  uint32 retention_hours = 120;
+}
+
+message GetRetentionTaskInfoV3Request { string phone_server_id = 1; }
+
+message GetRetentionTaskInfoV3Response {
+  basic.ResponseStatus response_status = 1;
+  string offer_id = 10;
+  string phone_id = 20;
+  string phone_server_ip = 30;
+  string app_pkg_name = 40;
+  string app_main_activity = 50;
+  string ip_conf = 60;
+  string country = 70;
+  string xray_server_ip = 80;
+  uint32 cpa_status = 90;
+  uint32 retention_type = 100;
+  string real_dynamic_ip = 110;
+  uint32 retention_hours = 120;
+  int64 retention_task_id = 130;
+}
+
+message GetStaticIpRequest {
+  optional uint32 status = 1;
+  string ip_channel = 2;
+  string url = 3;
+  string country = 4;
+  uint32 offset = 5;
+  uint32 limit = 6;
+}
+
+message GetStaticIpResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.StaticIP data_set = 2;
+  uint32 total_count = 3;
+}
+
+message RemoveOfferFromBlacklistRequest {
+  string offer_id = 1;
+  string note = 2;
+}
+
+message RemoveOfferFromBlacklistResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message UpdateAppStatusRequest {
+  uint32 app_id = 1;
+  optional uint32 status = 2;
+}
+
+message UpdateAppStatusResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdateOfferRequest {
+  string offer_id = 1;
+  basic.OfferInfo.OtherConf other_conf = 2;
+  string retention_conf = 3;
+  optional uint32 status = 4;
+  string note = 5;
+  optional uint32 overwrite_cap = 6;
+  optional uint32 dynamic_ip_cooldown_day = 7;
+  string dynamic_ip_channel = 8;
+  optional uint32 ip_mode =
+      9; // 0 动静结合,默认动态 1 纯动态 2 动静结合,默认静态 3 纯静态;default:0
+}
+
+message UpdateOfferResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdatePhoneRequest {
+  string phone_id = 1;
+  optional uint32 phone_status = 2;
+  optional uint32 cpa_status = 3;
+  string callback_date = 4;
+  optional uint32 retention_type = 5;
+  string retention_offer_id = 6;
+  string ip_conf = 7;
+}
+
+message UpdatePhoneResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdatePhoneStatusRequest {
+  string phone_id = 1;
+  optional uint32 phone_status = 2;
+  optional uint32 cpa_status = 3;
+}
+
+message UpdatePhoneStatusResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdatePhoneServerRequest {
+  uint32 id = 1;
+  string host_id = 2;
+  string private_ip = 3;
+  string public_ip = 4;
+  uint32 daily_max_cap = 5;
+  string xray_server_ip = 6;
+  string appium_server_ip = 7;
+  basic.PhoneServer.Strategy strategy = 8;
+  optional uint32 status = 9;
+  string note = 10;
+  // repeated string offer_ids = 11; // 弃用
+  bool is_deprecating = 12;
+  repeated string designated_offer_ids = 13;
+  repeated string designated_countries = 14;
+  repeated string designated_pkgs = 15;
+}
+
+message UpdatePhoneServerResponse { basic.ResponseStatus response_status = 1; }
+
+message UpsertRetentionRecordRequest {
+  string offer_id = 1;
+  string phone_id = 2;
+  string phone_server_id = 3;
+  optional uint32 status = 4;
+  string action_name = 5;
+  optional uint32 action_result = 6;
+  string dynamic_ip = 7;
+  string static_ip = 8;
+  int64 retention_task_id = 9;
+}
+
+message UpsertRetentionRecordResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message UpdateGlobalConfigRequest { basic.GlobalConfig config = 1; }
+
+message UpdateGlobalConfigResponse { basic.ResponseStatus response_status = 1; }
+
+message GetGlobalConfigRequest {}
+
+message GetGlobalConfigResponse {
+  basic.ResponseStatus response_status = 1;
+  basic.GlobalConfig config = 2;
+}
+
+message UpdateAppiumStatusRequest {
+  uint32 appium_id = 1;
+  optional uint32 status = 2;
+}
+
+message UpdateAppiumStatusResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdateStaticIPInfoRequest {
+  uint32 id = 1;
+  optional uint32 status = 2;
+  int64 expiration_timestamp = 3;
+}
+
+message UpdateStaticIPInfoResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdatePlatformStatusRequest {
+  uint32 platform_id = 1;
+  optional uint32 status = 2;
+}
+
+message UpdatePlatformStatusResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message AddNurtureGAIDPhoneRequest {
+  string phone_id = 10;
+  string server_ip = 20;
+  string sdk = 30;
+  uint32 status = 31;
+  string note = 40;
+}
+
+message AddNurtureGAIDPhoneResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetNurtureGAIDPhoneRequest {
+  string phone_id = 10;
+  string server_ip = 20;
+  string sdk = 30;
+  repeated uint32 statuses = 40;
+  uint32 offset = 50;
+  uint32 limit = 60;
+}
+
+message GetNurtureGAIDPhoneResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.NurtureGAIDPhone data_set = 2;
+  uint32 total_count = 3;
+}
+
+message UpdateNurtureGAIDPhoneRequest {
+  string phone_id = 10;
+  uint32 sdk = 11;
+  optional uint32 status = 20;
+  string note = 30;
+}
+
+message UpdateNurtureGAIDPhoneResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message AddNurtureGAIDPhoneServerRequest {
+  string host_id = 10;
+  string ip = 20;
+  uint32 status = 30;
+}
+
+message AddNurtureGAIDPhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetNurtureGAIDPhoneServerRequest {
+  string host_id = 10;
+  string ip = 20;
+  optional uint32 status = 30;
+  uint32 offset = 40;
+  uint32 limit = 50;
+}
+
+message GetNurtureGAIDPhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.NurtureGAIDServer data_set = 2;
+  uint32 total_count = 3;
+}
+
+message UpdateNurtureGAIDPhoneServerRequest {
+  string host_id = 10;
+  optional uint32 status = 20;
+  string note = 30;
+}
+
+message UpdateNurtureGAIDPhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message AddNurtureGAIDTaskRequest {
+  string sdk = 10;
+  string country = 20;
+  uint32 count = 30;
+  string tag = 40;
+}
+
+message AddNurtureGAIDTaskResponse {
+  basic.ResponseStatus response_status = 1;
+  string batch_id = 2;
+}
+
+message GetNurtureGAIDTaskStatRequest {
+  string sdk = 10;
+  string country = 20;
+  int64 created_before = 60;
+  int64 created_after = 70;
+}
+
+message GetNurtureGAIDTaskStatResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated TaskBatch data_set = 2;
+  message TaskBatch {
+    string task_batch_id = 1;
+    string sdk = 2;
+    string country = 3;
+    int64 created_at = 4;
+    uint32 success_count = 5;
+    uint32 running_count = 6;
+    uint32 pending_count = 7;
+    uint32 failed_count = 8;
+    uint32 total_count = 9;
+  }
+}
+
+message GetGAIDStatRequest {
+  string sdk = 10;
+  string country = 20;
+  uint32 age_in_days = 30;
+  string exclude_pkg_name = 40;
+}
+
+message GetGAIDStatResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated GAID data_set = 2;
+  message GAID {
+    string sdk = 1;
+    string country = 2;
+    uint32 available_count = 3;
+  }
+}
+
+message RenewalStaticIPRequest {
+  string ip_channel = 10;
+  string country = 20;
+  string url = 30;
+  int64 expiration_date = 40;
+  string note = 50;
+}
+
+message RenewalStaticIPResponse { basic.ResponseStatus response_status = 1; }
+
+message UpdateGAIDRequest {
+  string gaid = 10;
+  optional uint32 status = 20;
+  string used_pkg_name = 30;
+}
+
+message UpdateGAIDResponse { basic.ResponseStatus response_status = 1; }
+
+message CommonStat {
+  uint32 do_cpi_count = 10;
+  uint32 cpi_succeed_count = 20;
+  uint32 do_cpa_count = 30;
+  uint32 cpa_succeed_count = 40;
+  uint32 actual_callback_count = 50;
+  string cpi_success_percent = 60;
+  string cpa_success_percent = 70;
+  string cpi_activate_percent = 80;
+  string cpa_activate_percent = 90;
+  uint32 block_count = 100;
+  string realTime_block_percent = 110;
+}
+
+message BlockStat {
+  uint32 bayesian_network_block_count = 10;
+  uint32 behavioral_anomalies_block_count = 20;
+  uint32 click_clusters_block_count = 30;
+  uint32 click_flood_block_count = 40;
+  uint32 device_emulators_block_count = 50;
+  uint32 fake_install_parameters_block_count = 60;
+  uint32 timestamp_anomalies_block_count = 70;
+  uint32 un_match_geo_block_count = 80;
+  uint32 validation_rules_block_count = 90;
+  uint32 others_block_count = 100;
+  uint32 ai_layer_count = 110;
+  uint32 device_farms_count = 120;
+}
+
+message RetentionStat {
+  uint32 need_retention_count = 10;
+  uint32 actual_retention_count = 20;
+}
+
+message GetActivateStatDetailRequest {
+  string pkg_name = 1;
+  string country = 2;
+  string platform = 3;
+  string offer_id = 4;
+  string phone_server_id = 5;
+  int64 begin_at = 6;
+  int64 end_at = 7;
+  string time_type = 8; // hour\day
+}
+message GetActivateStatDetailResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    int64 begin_at = 1;
+    int64 end_at = 2;
+    CommonStat common_stat = 10;
+    BlockStat block_stat = 20;
+  }
+}
+
+message GetActivateStatByCountryRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetActivateStatByCountryResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string country = 1;
+    uint32 daily_cap = 2;
+    CommonStat common_stat = 10;
+  }
+}
+
+message GetActivateStatByPhoneServerRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetActivateStatByPhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string phone_server_id = 1;
+    CommonStat common_stat = 10;
+  }
+}
+
+message GetActivateStatByOfferRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetActivateStatByOfferResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string offer_id = 1;
+    string country = 2;
+    string platform = 3;
+    int64 daily_cap = 4;
+    string dynamic_ip_channel = 5;
+    CommonStat common_stat = 10;
+  }
+}
+
+message GetActivateStatByPlatformRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetActivateStatByPlatformResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string platform = 1;
+    uint32 daily_cap = 2;
+    CommonStat common_stat = 10;
+  }
+}
+
+message GetActivateStatisticByOfferSummaryRequest {
+  int64 begin_at = 1;
+  int64 end_at = 2;
+  string pkg_name = 3;
+}
+
+message GetActivateStatisticByOfferSummaryResponse {
+  basic.ResponseStatus response_status = 1;
+  uint32 cap = 2;
+  uint32 callback = 3;
+  repeated string unactivated_offers = 4;
+}
+
+message GetActivateStatisticByPhoneServerSummaryRequest {
+  int64 begin_at = 1;
+  int64 end_at = 2;
+}
+
+message GetActivateStatisticByPhoneServerSummaryResponse {
+  basic.ResponseStatus response_status = 1;
+  uint32 total_cap = 2;
+  uint32 total_callback = 3;
+  repeated string unactivated_phone_servers = 4;
+}
+
+message GetDailyCapByCountryAndPlatformRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+  string platform = 4;
+}
+
+message GetDailyCapByCountryAndPlatformResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string country = 1;
+    uint32 daily_cap = 2;
+    uint32 actualCallbackCount = 3;
+    uint32 blockCount = 4;
+    string realTimeBlockPercent = 5;
+  }
+}
+
+message DescribePhoneJobRequest { string job_id = 1; }
+message DescribePhoneJobResponse {
+  basic.ResponseStatus response_status = 1;
+  string state = 2;
+}
+
+message GetRetentionStatByPhoneServerRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetRetentionStatByPhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string phone_server_id = 1;
+    RetentionStat retention_stat = 10;
+  }
+}
+
+message GetRetentionStatByOfferRequest {
+  string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetRetentionStatByOfferResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    string offer_id = 1;
+    string country = 2;
+    string platform = 3;
+    RetentionStat retention_stat = 10;
+  }
+}
+
+message GetRetentionStatDetailRequest {
+  string pkg_name = 1;
+  string country = 2;
+  string platform = 3;
+  string offer_id = 4;
+  string phone_server_id = 5;
+  int64 begin_at = 6;
+  int64 end_at = 7;
+  string time_type = 8; // hour\day
+}
+message GetRetentionStatDetailResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StatResponse data_set = 2;
+  message StatResponse {
+    int64 begin_at = 1;
+    int64 end_at = 2;
+    RetentionStat retention_stat = 10;
+  }
+}
+
+message GetChartConversionDailyStaticsRequest {
+  // string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetChartConversionDailyStaticsResponse {
+  basic.ResponseStatus response_status = 1;
+  StaticsResponse data_set = 2;
+}
+
+message GetChartBlockDailyStaticsRequest {
+  // string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetChartBlockDailyStaticsResponse {
+  basic.ResponseStatus response_status = 1;
+  StaticsResponse data_set = 2;
+}
+
+message StaticsResponse {
+  repeated string dimensions = 10;
+  string source = 20;
+}
+
+message GetChartBlockDailyPaStaticsRequest {
+  // string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetChartBlockDailyPaStaticsResponse {
+  basic.ResponseStatus response_status = 1;
+  PaStaticsResponse data_set = 2;
+}
+
+message PaStaticsResponse {
+  repeated string dimensions = 10;
+  string source = 20;
+}
+
+message GetChartBlockDailyPaByCountryStaticsRequest {
+  // string pkg_name = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetChartBlockDailyPaByCountryStaticsResponse {
+  basic.ResponseStatus response_status = 1;
+  PaStaticsResponse data_set = 2;
+}
+
+message AccountStaticsResponse {
+  repeated string dimensions = 10;
+  string source = 20;
+}
+
+message GetChartAccountDailyByPlatformStaticsRequest {
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetChartAccountDailyByPlatformStaticsResponse {
+  basic.ResponseStatus response_status = 1;
+  AccountStaticsResponse data_set = 2;
+}
+
+message CreatePhoneServerRequest { string appium_server_ip = 10; }
+message CreatePhoneServerResponse {
+  basic.ResponseStatus response_status = 1;
+  string server_id = 10;
+  string host_id = 20;
+  string phone_server_public_ip = 30;
+  string phone_server_private_ip = 40;
+  string xray_server_ip = 50;
+  string appium_server_ip = 60;
+}
+
+message DeletePhoneServerRequest { string server_id = 10; }
+message DeletePhoneServerResponse {}
+
+message CreateTestDBDocumentRequest {}
+
+message CreateTestDBDocumentResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message UpdateTestDBDocumentRequest {
+  uint32 id = 10;
+  int64 custom_time = 20;
+}
+
+message UpdateTestDBDocumentResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message StopAppiumCpaProcessRequest {
+  string appium_ip = 1;
+  bool stop_all = 2;
+}
+
+message StopAppiumCpaProcessResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message ResetAppiumCpaProcessRequest {
+  string appium_ip = 1;
+  bool reset_all = 2;
+}
+
+message ResetAppiumCpaProcessResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetRandomIPConfRequest {
+  string offer_id = 1;
+  string phone_id = 2;
+}
+
+message GetRandomIPConfResponse {
+  basic.ResponseStatus response_status = 1;
+  string ip_conf = 2;
+}
+
+message GetSummaryStaticsRequest {
+  optional string platform = 1;
+  optional string country = 2;
+  int64 begin_at = 3;
+  int64 end_at = 4;
+  string month = 5;
+}
+
+message GetSummaryStaticsResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated StaticsResponse data_set = 2;
+  int64 callback_total = 3;
+  int64 pa_total = 4;
+  string summary_total = 5;
+
+  message StaticsResponse {
+    string offer_id = 1;
+    string country = 2;
+    string platform = 3;
+    string apk_name = 4;
+    float payout = 5;
+    int64 callback_num = 6;
+    int64 pa_num = 7;
+    string sum_total = 8;
+    string settlement_ratio = 9;
+  }
+}
+
+message AddAlarmMsgRequest {
+  string content = 10;
+  string resource_type = 20;
+  uint32 level = 30; // 0:info 1:warning 2:error 3:fatal
+}
+
+message AddAlarmMsgResponse { basic.ResponseStatus response_status = 10; }
+
+message GetAlarmMsgRequest {
+  string resource_type = 10;
+  optional uint32 level = 20;
+  optional bool resolved = 30;
+  int64 created_after = 40;
+  int64 created_before = 50;
+  uint32 offset = 60;
+  uint32 limit = 70;
+}
+
+message GetAlarmMsgResponse {
+  basic.ResponseStatus response_status = 10;
+  repeated basic.AlarmMsg data_set = 2;
+  uint32 total_count = 3;
+}
+
+message ResolveAlarmMsgRequest { repeated uint32 ids = 10; }
+
+message ResolveAlarmMsgResponse { basic.ResponseStatus response_status = 10; }
+
+message GetInfoByClickIDRequest {
+  string click_id = 1; // 点击ID
+}
+
+message GetInfoByClickIDResponse {
+  basic.ResponseStatus response_status = 1; // 响应状态
+  basic.ActivateRecord ac_record = 2;       // 激活记录数据
+  string gaid_json_data = 3;                // GAID的JSON数据
+}
+
+message GetRandomGaidJsonByModelAndSDKRequest {
+  string model = 1;
+  string sdk = 2;
+  string country = 3;
+}
+
+message GetRandomGaidJsonByModelAndSDKResponse {
+  basic.ResponseStatus response_status = 1; // 响应状态
+  string gaid_json = 2;
+}
+
+message GenNurtureGAIDFromSourceGAIDRequest {
+  string country = 1;
+  string sdk = 2;
+  string tag = 3;
+  int64 count = 4;
+}
+
+message GenNurtureGAIDFromSourceGAIDResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetActivateTaskInfoV2Request {
+  string offer_id = 10;
+  string appium_name = 20;
+  string phone_server_id = 30;
+  string image_tag_map = 40;
+}
+
+message GetActivateTaskInfoV2Response {
+  basic.ResponseStatus response_status = 10;
+  string phone_id = 20;
+  string sdk_version = 21;
+  string base_url = 30;
+  string app_pkg_name = 40;
+  string app_main_activity = 50;
+  string install_version = 60;
+  string country = 70;
+  string gaid = 71;
+  string ctit = 80;
+  string boot_time = 90; // GAID养号时使用的boot_time
+}
+
+message CheckPhoneDeviceStatusRequest { string phone_id = 10; }
+
+message CheckPhoneDeviceStatusResponse {
+  basic.ResponseStatus response_status = 1;
+  basic.Phone.DeviceStatus status = 2;
+}
+
+message CheckPhoneDynamicNetworkRequest {
+  string phone_id = 10;
+  string offer_id = 20;
+}
+
+message CheckPhoneDynamicNetworkResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message ShutDownPhoneRequest { string phone_id = 10; }
+
+message ShutDownPhoneResponse { basic.ResponseStatus response_status = 1; }
+
+message GetMonthlyIncomeReportRequest {
+  string platform_name = 1;
+  string account_date = 2;
+}
+
+message GetMonthlyIncomeReportResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.MonthlyIncomeReport data_set = 2;
+  string calculate_total = 3;
+  string confirm_total = 4;
+}
+
+message AddMonthlyIncomeReportRequest {
+  string platform_name = 1;
+  string account_date = 2;
+}
+
+message AddMonthlyIncomeReportResponse {
+  basic.ResponseStatus response_status = 1;
+}
+
+message GetRetentionRecordDetailRequest {
+  repeated string offer_ids = 1;
+  int64 begin_at = 2;
+  int64 end_at = 3;
+}
+
+message GetRetentionRecordDetailResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.RetentionRecordDetail data_set = 2;
+  repeated basic.Callback callbacks = 3;
+}
+
+message GetRetentionStrategyRequest {
+  optional string platform_name = 1;
+  optional string country = 2;
+  optional string pkg_name = 3;
+}
+
+message GetRetentionStrategyResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.RetentionStrategy data_set = 2;
+  repeated basic.Callback callbacks = 3;
+}
+
+message SyncNoAdidOfferListRequest {
+  repeated string offer_ids = 1; // 要同步的offer ID列表
+}
+
+message SyncNoAdidOfferListResponse {
+  basic.ResponseStatus response_status = 1;
+  string message = 2; // 同步结果消息
+}
+
+message GetTTVideoDataRequest {
+  optional string phone_id = 1;
+  optional string phone_server_id = 2;
+  optional string statistics_date = 3;
+  optional string followers_num = 4;
+  optional string following_num = 5;
+  optional string likes_num = 6;
+  optional string video_see_num = 7;
+}
+
+message GetTTVideoDataResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.TTVideoData data_set = 2;
+}
+
+message GetTTAccountDataRequest {
+  optional string phone_id = 1;
+  optional string phone_server_id = 2;
+}
+
+message GetTTAccountDataResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.TTAccountData data_set = 2;
+}
+
+message GetTTVideoLatestDataRequest {
+  optional string phone_id = 1;
+  optional string phone_server_id = 2;
+  optional string statistics_date = 3;
+  optional string followers_num = 4;
+  optional string following_num = 5;
+  optional string likes_num = 6;
+  optional string video_see_num = 7;
+}
+
+message GetTTVideoLatestDataResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.TTVideoData data_set = 2;
+}
+
+// EmailAccount 邮箱账号管理相关消息定义
+message AddEmailAccountRequest {
+  string account = 1;                  // 完整邮箱账号
+  string password = 2;                 // 邮箱密码
+  string domain = 3;                   // 邮箱域名
+  basic.EmailAccountStatus status = 4; // 账号状态
+  string tags = 5;                     // 标签，逗号分隔
+  string remark = 6;                   // 备注
+}
+
+message AddEmailAccountResponse {
+  basic.ResponseStatus response_status = 1;
+  int64 id = 2; // 创建的邮箱账号ID
+}
+
+message GetEmailAccountRequest {
+  repeated int64 ids = 1;                       // 账号ID列表
+  repeated string accounts = 2;                 // 邮箱账号列表
+  repeated string domains = 3;                  // 邮箱域名列表
+  optional basic.EmailAccountStatus status = 4; // 账号状态
+  repeated string tags = 5;                     // 标签过滤
+  google.protobuf.Timestamp created_after = 6;  // 创建时间之后
+  google.protobuf.Timestamp created_before = 7; // 创建时间之前
+  uint32 offset = 8;                            // 分页偏移
+  uint32 limit = 9;                             // 分页限制
+}
+
+message GetEmailAccountResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated basic.EmailAccount email_accounts = 2;
+  uint32 total_count = 3; // 总数量
+}
+
+message UpdateEmailAccountRequest {
+  int64 id = 1;                 // 账号ID（可选，与account二选一）
+  optional string account = 2;  // 邮箱账号（可选，与id二选一）
+  optional string password = 3; // 邮箱密码
+  optional basic.EmailAccountStatus status = 4; // 账号状态
+  optional string tags = 5;                     // 标签
+  optional string remark = 6;                   // 备注
+}
+
+message UpdateEmailAccountResponse { basic.ResponseStatus response_status = 1; }
+
+message DeleteEmailAccountRequest {
+  int64 id = 1; // 账号ID
+}
+
+message DeleteEmailAccountResponse { basic.ResponseStatus response_status = 1; }
+
+message FetchAvailableEmailAccountRequest {
+  repeated string domains = 1; // 指定邮箱域名
+  repeated string tags = 2;    // 指定标签
+}
+
+message FetchAvailableEmailAccountResponse {
+  basic.ResponseStatus response_status = 1;
+  basic.EmailAccount email_account = 2; // 获取到的可用邮箱账号
+}
+
+message DeleteStaticIPRequest { int64 id = 1; }
+message DeleteStaticIPResponse { basic.ResponseStatus response_status = 1; }
+
+message VerifyIPLocationRequest {
+  string ip_address = 1;       // IP地址
+  string expected_country = 2; // 期望的国家代码 (如: US, CN等)
+}
+
+message VerifyIPLocationResponse {
+  basic.ResponseStatus response_status = 1;
+  string expected_country = 2; // 期望的国家代码 (如: US, CN等)
+  bool is_qualified = 3; // 是否合格（三个检测源与输入的结果一致且符合期望国家）
+  string dynamicip_country = 4; // dynamicip.wumitech.com 检测的国家
+  string staticip_country = 5;  // staticip.wumitech.com 检测的国家
+  string ipinfo_country = 6;    // ipinfo.io 检测的国家
+}
+
+message GetDailyCapByCountryRequest {}
+
+message GetDailyCapByCountryResponse {
+  basic.ResponseStatus response_status = 1;
+  repeated CountryCapStat data_set = 2;
+  message CountryCapStat {
+    string country = 1;         // 国家代码
+    uint32 daily_cap_count = 2; // 该国家的daily_cap总数
+  }
+}

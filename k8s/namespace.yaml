@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wumitech-cpa
+  labels:
+    name: wumitech-cpa
+
