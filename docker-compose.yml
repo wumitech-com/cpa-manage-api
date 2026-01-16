@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  cpa-manage-api:
+    image: uhub.service.ucloud.cn/wumitech.public/cpa-manage-api:latest
+    container_name: cpa-manage-api
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - /home/ubuntu/cpa-manage-api/logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Duser.timezone=Asia/Shanghai
+      - SPRING_PROFILES_ACTIVE=prod
+      # 主板机环境变量配置
+      - MAINBOARD_PUBLIC_IP=206.119.108.2
+      - MAINBOARD_APPIUM_SERVER=10.7.124.25
+    networks:
+      - cpa-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  cpa-network:
+    driver: bridge
+
