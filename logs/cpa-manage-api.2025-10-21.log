@@ -1,6 +1,0 @@
-2025-10-21 10:27:01.800 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - Starting CpaManageApiApplication using Java 17.0.1 with PID 79776 (D:\developProject\cpa-manage-api\target\classes started by sunxy in D:\developProject\cpa-manage-api)
-2025-10-21 10:27:01.803 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - The following 1 profile is active: "dev"
-2025-10-21 10:27:04.564 WARN  [main] org.hibernate.orm.deprecation - [?,?] - HHH90000025: MySQL8Dialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2025-10-21 10:27:04.566 WARN  [main] org.hibernate.orm.deprecation - [?,?] - HHH90000026: MySQL8Dialect has been deprecated; use org.hibernate.dialect.MySQLDialect instead
-2025-10-21 10:27:05.975 WARN  [main] o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - [?,?] - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2025-10-21 10:27:06.487 INFO  [main] com.cpa.CpaManageApiApplication - [?,?] - Started CpaManageApiApplication in 5.341 seconds (process running for 6.428)
