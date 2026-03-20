@@ -65,7 +65,8 @@ ssh_key.pub
 *.jks
 
 # Kubernetes：若 kubeconfig 含集群凭证，可改为只提交 kubeconfig.example.yaml
-# k8s/kubeconfig.yaml
+k8s/kubeconfig.yaml
+k8s/kubeconfig*.yaml
 
 # ========== 杂项 ==========
 *.tmp
