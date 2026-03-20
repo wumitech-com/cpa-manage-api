@@ -1,0 +1,74 @@
+# ========== Maven / Java ==========
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+replay_pid*
+
+# ========== IDE ==========
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.factorypath
+.springBeans
+.sts4-cache
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# ========== Spring Boot ==========
+logs/
+*.log
+spring-shell.log
+
+# 本地/密钥配置（勿提交真实内容；可用 application-local.yml.example）
+application-local.yml
+application-local.properties
+*-local.yml
+*-local.properties
+
+# ========== 操作系统 ==========
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# ========== 环境与密钥 ==========
+.env
+.env.*
+!.env.example
+*.pem
+id_rsa
+id_rsa.pub
+*_rsa
+ssh_key
+ssh_key.pub
+*.p12
+*.jks
+
+# Kubernetes：若 kubeconfig 含集群凭证，可改为只提交 kubeconfig.example.yaml
+# k8s/kubeconfig.yaml
+
+# ========== 杂项 ==========
+*.tmp
+*.bak
+*.orig
+node_modules/
