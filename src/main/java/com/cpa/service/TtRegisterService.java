@@ -3,12 +3,16 @@ package com.cpa.service;
 import com.cpa.config.SshProperties;
 import com.cpa.entity.TtAccountRegister;
 import com.cpa.entity.TtRegisterTask;
+import com.cpa.entity.TtRetentionRecord;
 import com.cpa.repository.TtAccountRegisterRepository;
 import com.cpa.repository.TtRegisterTaskRepository;
+import com.cpa.repository.TtRetentionRecordRepository;
 import com.cpa.util.SshUtil;
 import com.cpa.util.SshConnectionPool;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.PostConstruct;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
@@ -35,10 +40,10 @@ import java.util.regex.Pattern;
 public class TtRegisterService {
 
     private final SshProperties sshProperties;
-    private final PhoneCenterGrpcService phoneCenterGrpcService;
     private final ApiService apiService;
     private final TtAccountRegisterRepository ttAccountRegisterRepository;
     private final TtRegisterTaskRepository ttRegisterTaskRepository;
+    private final TtRetentionRecordRepository ttRetentionRecordRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     @Value("${tt-register.default-image:}")
@@ -49,13 +54,17 @@ public class TtRegisterService {
     
     @Value("${tt-register.default-static-ip-channel:}")
     private String defaultStaticIpChannel;
+
+    /** 留存任务脚本名称（与注册脚本同目录 /data/appium/com_zhiliaoapp_musically/） */
+    @Value("${tt-register.retention-script-name:fast_retention_noappium_swipe.py}")
+    private String retentionScriptName;
     
-    // 主板机环境变量配置
-    @Value("${MAINBOARD_PUBLIC_IP:206.119.108.2}")
-    private String mainboardPublicIp;
+    // 主板机环境变量配置 - 已注释（云手机部署）
+    // @Value("${MAINBOARD_PUBLIC_IP:206.119.108.2}")
+    // private String mainboardPublicIp;
     
-    @Value("${MAINBOARD_APPIUM_SERVER:10.7.124.25}")
-    private String mainboardAppiumServer;
+    // @Value("${MAINBOARD_APPIUM_SERVER:10.7.124.25}")
+    // private String mainboardAppiumServer;
     
     // 任务信息存储（taskId -> TaskInfo）
     private final Map<String, TaskInfo> taskInfoMap = new ConcurrentHashMap<>();
@@ -88,7 +97,7 @@ public class TtRegisterService {
     
     // 4. ResetPhoneEnv接口调用并发控制信号量（按服务器分组，不同服务器可以并行）
     // 限制每个服务器同时调用ResetPhoneEnv的数量，避免服务器压力过大
-    private static final int MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER = 7; // 每个服务器最多同时7个ResetPhoneEnv调用
+    private static final int MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER = 10; // 每个服务器最多同时10个ResetPhoneEnv调用
     // 为每个服务器创建独立的信号量，不同服务器的调用可以并行
     private static final ConcurrentHashMap<String, Semaphore> resetPhoneEnvSemaphores = new ConcurrentHashMap<>();
     
@@ -117,6 +126,48 @@ public class TtRegisterService {
     
     // 6. 设备执行锁（按设备ID，防止同一设备被多个任务同时操作）
     private static final ConcurrentHashMap<String, Semaphore> deviceLocks = new ConcurrentHashMap<>();
+
+    /**
+     * 本机留存去重缓存：同一账号在 24 小时内只会被本 JVM 处理一次留存
+     * key: account_register_id, value: 首次处理时间
+     */
+    private final Cache<Long, Instant> retentionProcessingCache =
+            CacheBuilder.newBuilder()
+                    .expireAfterWrite(24, TimeUnit.HOURS)
+                    .build();
+
+    /**
+     * 若数据库中任务已被置为 STOPPED（如手动改库），则同步到内存并返回 true，调用方应停止执行。
+     * 返回 true 时已设置 task.setStatus("STOPPED") 并加入 stoppedTaskIds，调用方应 updateById(task) 后退出。
+     */
+    private boolean syncStoppedFromDb(TtRegisterTask task) {
+        TtRegisterTask db = ttRegisterTaskRepository.selectById(task.getId());
+        if (db != null && "STOPPED".equals(db.getStatus())) {
+            task.setStatus("STOPPED");
+            task.setUpdatedAt(LocalDateTime.now());
+            stoppedTaskIds.add(task.getTaskId());
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 根据账号的安卓版本调整镜像路径中的 androidXX 段（例如 android13_cpu、android14_cpu），保持与备份时版本一致。
+     * 只替换 android+数字+下划线 这一段，仓库、tag 等保持不变。
+     */
+    private String adjustImagePathForAndroidVersion(String imagePath, String androidVersion) {
+        if (imagePath == null || imagePath.isEmpty() || androidVersion == null || androidVersion.isEmpty()) {
+            return imagePath;
+        }
+        // 提取数字部分，例如 "14"、"15"；如果没有数字则不处理
+        String digits = androidVersion.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return imagePath;
+        }
+        String target = "android" + digits + "_";
+        // 将 androidXX_ 替换成目标版本
+        return imagePath.replaceAll("android\\d+_", target);
+    }
     
     /**
      * 获取指定服务器的ResetPhoneEnv调用信号量
@@ -131,12 +182,13 @@ public class TtRegisterService {
     /**
      * 定时任务：每1分钟查询并执行待执行的任务
      */
-    // @Scheduled(fixedRate = 60 * 1000) // 每60秒（1分钟）执行一次 - 已注释（主板机部署）
+    @Scheduled(fixedRate = 60 * 1000) // 每60秒（1分钟）执行一次
     public void scheduledExecutePendingTasks() {
         try {
-            // 查询 PENDING 状态的云手机任务（device_type为CLOUD_PHONE或NULL）
+            // 查询 PENDING 状态的云手机注册任务（task_kind 为 REGISTER 或 null，device_type 为 CLOUD_PHONE 或 NULL）
             LambdaQueryWrapper<TtRegisterTask> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(TtRegisterTask::getStatus, "PENDING");
+            wrapper.and(w -> w.isNull(TtRegisterTask::getTaskKind).or().eq(TtRegisterTask::getTaskKind, "REGISTER"));
             wrapper.and(w -> w.isNull(TtRegisterTask::getDeviceType)
                     .or()
                     .eq(TtRegisterTask::getDeviceType, "CLOUD_PHONE"));
@@ -144,14 +196,14 @@ public class TtRegisterService {
             List<TtRegisterTask> pendingTasks = ttRegisterTaskRepository.selectList(wrapper);
             
             if (pendingTasks.isEmpty()) {
-                log.debug("定时任务检查：没有待执行的云手机任务");
+                log.debug("定时任务检查：没有待执行的云手机注册任务");
                 return;
             }
             
-            log.info("定时任务检查：发现 {} 个待执行的云手机任务，开始执行", pendingTasks.size());
+            log.info("定时任务检查：发现 {} 个待执行的云手机注册任务，开始执行", pendingTasks.size());
             
-            // 使用默认并发数 7
-            int maxConcurrency = 7;
+            // 使用默认并发数 10
+            int maxConcurrency = 10;
             Semaphore semaphore = new Semaphore(maxConcurrency);
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             
@@ -217,6 +269,7 @@ public class TtRegisterService {
                         if (finalTask.getDynamicIpChannel() != null) resetParams.put("dynamicIpChannel", finalTask.getDynamicIpChannel());
                         if (finalTask.getStaticIpChannel() != null) resetParams.put("staticIpChannel", finalTask.getStaticIpChannel());
                         if (finalTask.getBiz() != null) resetParams.put("biz", finalTask.getBiz());
+                        if (finalTask.getAppiumServer() != null) resetParams.put("appiumServer", finalTask.getAppiumServer());
                         
                         // 根据任务类型确定 emailMode
                         String emailMode;
@@ -226,7 +279,6 @@ public class TtRegisterService {
                             emailMode = "outlook";
                         } else {
                             log.error("未知的任务类型: taskId={}, taskType={}", finalTask.getTaskId(), finalTask.getTaskType());
-                            finalTask.setStatus("FAILED");
                             finalTask.setUpdatedAt(LocalDateTime.now());
                             ttRegisterTaskRepository.updateById(finalTask);
                             return;
@@ -236,7 +288,6 @@ public class TtRegisterService {
                         executeTaskForDevice(finalTask, resetParams, emailMode);
                     } catch (Exception e) {
                         log.error("执行任务异常: taskId={}", finalTask.getTaskId(), e);
-                        finalTask.setStatus("FAILED");
                         finalTask.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(finalTask);
                     } finally {
@@ -268,7 +319,7 @@ public class TtRegisterService {
     /**
      * 定时任务：每1分钟查询并执行主板机养号任务
      */
-    @Scheduled(fixedRate = 60 * 1000) // 每60秒（1分钟）执行一次
+    // @Scheduled(fixedRate = 60 * 1000) // 每60秒（1分钟）执行一次 - 已注释（云手机部署）
     public void scheduledExecuteMainboardTasks() {
         try {
             // 查询 PENDING 状态的主板机任务
@@ -281,8 +332,8 @@ public class TtRegisterService {
             
             log.info("定时任务检查：发现 {} 个待执行的主板机养号任务，开始执行", pendingTasks.size());
             
-            // 使用默认并发数 7
-            int maxConcurrency = 7;
+            // 使用默认并发数 10
+            int maxConcurrency = 10;
             Semaphore semaphore = new Semaphore(maxConcurrency);
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             
@@ -346,7 +397,6 @@ public class TtRegisterService {
                             emailMode = "outlook";
                         } else {
                             log.error("未知的主板机任务类型: taskId={}, taskType={}", finalTask.getTaskId(), finalTask.getTaskType());
-                            finalTask.setStatus("FAILED");
                             finalTask.setUpdatedAt(LocalDateTime.now());
                             ttRegisterTaskRepository.updateById(finalTask);
                             return;
@@ -356,7 +406,6 @@ public class TtRegisterService {
                         executeMainboardTaskForDevice(finalTask, emailMode);
                     } catch (Exception e) {
                         log.error("执行主板机任务异常: taskId={}", finalTask.getTaskId(), e);
-                        finalTask.setStatus("FAILED");
                         finalTask.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(finalTask);
                     } finally {
@@ -382,6 +431,66 @@ public class TtRegisterService {
             
         } catch (Exception e) {
             log.error("定时任务检查主板机养号任务时出错", e);
+        }
+    }
+
+    /**
+     * 定时任务：每1分钟查询并执行待执行的留存任务（task_kind=RETENTION）
+     */
+    @Scheduled(fixedRate = 60 * 1000)
+    public void scheduledExecuteRetentionTasks() {
+        try {
+            List<TtRegisterTask> pendingTasks = ttRegisterTaskRepository.findPendingRetentionTasks();
+            if (pendingTasks.isEmpty()) {
+                log.debug("定时任务检查：没有待执行的留存任务");
+                return;
+            }
+            log.info("定时任务检查：发现 {} 个待执行的留存任务，开始执行", pendingTasks.size());
+            int maxConcurrency = 10;
+            Semaphore semaphore = new Semaphore(maxConcurrency);
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (TtRegisterTask task : pendingTasks) {
+                TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
+                if (currentTask == null || !"PENDING".equals(currentTask.getStatus())) continue;
+                if (stoppedTaskIds.contains(task.getTaskId())) {
+                    currentTask.setStatus("STOPPED");
+                    currentTask.setUpdatedAt(LocalDateTime.now());
+                    ttRegisterTaskRepository.updateById(currentTask);
+                    continue;
+                }
+                String phoneId = task.getPhoneId();
+                Semaphore deviceLock = deviceLocks.computeIfAbsent(phoneId, k -> new Semaphore(1, true));
+                if (!deviceLock.tryAcquire()) continue;
+                if (!semaphore.tryAcquire()) {
+                    deviceLock.release();
+                    continue;
+                }
+                task.setStatus("RUNNING");
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+                final TtRegisterTask finalTask = task;
+                final Semaphore finalDeviceLock = deviceLock;
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    try {
+                        log.info("开始执行留存任务: taskId={}, phoneId={}", finalTask.getTaskId(), finalTask.getPhoneId());
+                        executeRetentionTaskForDevice(finalTask);
+                    } catch (Exception e) {
+                        log.error("执行留存任务异常: taskId={}", finalTask.getTaskId(), e);
+                        finalTask.setStatus("FAILED");
+                        finalTask.setUpdatedAt(LocalDateTime.now());
+                        ttRegisterTaskRepository.updateById(finalTask);
+                    } finally {
+                        finalDeviceLock.release();
+                        semaphore.release();
+                    }
+                }, parallelRegisterExecutor);
+                futures.add(future);
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .thenRun(() -> log.info("定时任务：本次留存任务检查完成，共执行 {} 个任务", futures.size()))
+                    .exceptionally(e -> { log.error("定时任务执行留存任务异常", e); return null; });
+        } catch (Exception e) {
+            log.error("定时任务检查留存任务时出错", e);
         }
     }
     
@@ -418,8 +527,8 @@ public class TtRegisterService {
                 try {
                     Thread.sleep(3000); // 等待3秒，确保应用完全启动
                     log.info("应用启动后延迟执行待执行任务（使用定时任务逻辑）");
-                    // scheduledExecutePendingTasks(); // 执行云手机任务 - 已注释（主板机部署）
-                    scheduledExecuteMainboardTasks(); // 执行主板机任务
+                    scheduledExecutePendingTasks(); // 执行云手机任务
+                    // scheduledExecuteMainboardTasks(); // 执行主板机任务 - 已注释（云手机部署）
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     log.error("延迟执行任务被中断", e);
@@ -445,6 +554,7 @@ public class TtRegisterService {
         TtRegisterTask task = new TtRegisterTask();
         task.setTaskId(taskId);
         task.setTaskType(taskType);
+        task.setTaskKind("REGISTER");
         task.setServerIp(serverIp);
         task.setPhoneId(phoneId);
         task.setTargetCount(targetCount != null ? targetCount : 1);
@@ -469,6 +579,11 @@ public class TtRegisterService {
             task.setAdbPort(resetParams.getOrDefault("adbPort", ""));
         }
         
+        // 选择 Appium 服务器（负载均衡）
+        String appiumServer = selectAppiumServerWithLoadBalance();
+        task.setAppiumServer(appiumServer);
+        log.info("为任务选择 Appium 服务器: {}", appiumServer);
+        
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
         
@@ -477,6 +592,37 @@ public class TtRegisterService {
         log.info("创建任务记录: taskId={}, taskType={}, phoneId={}, targetCount={}", 
                 taskId, taskType, phoneId, task.getTargetCount());
         
+        return task;
+    }
+
+    /**
+     * 创建留存任务并保存到数据库（task_kind=RETENTION）
+     * @param phoneId 云手机ID
+     * @param serverIp 服务器IP
+     * @param targetCount 要处理的账号数量（从三天前符合条件的账号中随机取）
+     * @param country 国家代码，默认 US
+     * @param imagePath 镜像路径，可为空（执行时自动获取）
+     */
+    public TtRegisterTask createRetentionTask(String phoneId, String serverIp, Integer targetCount,
+                                             String country, String imagePath) {
+        String taskId = "RETENTION_" + phoneId + "_" + System.currentTimeMillis();
+        TtRegisterTask task = new TtRegisterTask();
+        task.setTaskId(taskId);
+        task.setTaskType("RETENTION");
+        task.setTaskKind("RETENTION");
+        task.setServerIp(serverIp);
+        task.setPhoneId(phoneId);
+        task.setTargetCount(targetCount != null && targetCount > 0 ? targetCount : 50);
+        task.setCountry(country != null && !country.isEmpty() ? country : "US");
+        task.setImagePath(imagePath);
+        task.setStatus("PENDING");
+        task.setDeviceType("CLOUD_PHONE");
+        String appiumServer = selectAppiumServerWithLoadBalance();
+        task.setAppiumServer(appiumServer);
+        task.setCreatedAt(LocalDateTime.now());
+        task.setUpdatedAt(LocalDateTime.now());
+        ttRegisterTaskRepository.insert(task);
+        log.info("创建留存任务: taskId={}, phoneId={}, targetCount={}, country={}", taskId, phoneId, task.getTargetCount(), task.getCountry());
         return task;
     }
     
@@ -533,6 +679,7 @@ public class TtRegisterService {
                             if (finalTask.getDynamicIpChannel() != null) resetParams.put("dynamicIpChannel", finalTask.getDynamicIpChannel());
                             if (finalTask.getStaticIpChannel() != null) resetParams.put("staticIpChannel", finalTask.getStaticIpChannel());
                             if (finalTask.getBiz() != null) resetParams.put("biz", finalTask.getBiz());
+                            if (finalTask.getAppiumServer() != null) resetParams.put("appiumServer", finalTask.getAppiumServer());
                             
                             // 根据任务类型确定 emailMode
                             String emailMode;
@@ -542,7 +689,6 @@ public class TtRegisterService {
                                 emailMode = "outlook";
                             } else {
                                 log.error("未知的任务类型: taskId={}, taskType={}", finalTask.getTaskId(), finalTask.getTaskType());
-                                finalTask.setStatus("FAILED");
                                 finalTask.setUpdatedAt(LocalDateTime.now());
                                 ttRegisterTaskRepository.updateById(finalTask);
                                 return;
@@ -552,7 +698,6 @@ public class TtRegisterService {
                             executeTaskForDevice(finalTask, resetParams, emailMode);
                         } catch (Exception e) {
                             log.error("执行任务异常: taskId={}", finalTask.getTaskId(), e);
-                            finalTask.setStatus("FAILED");
                             finalTask.setUpdatedAt(LocalDateTime.now());
                             ttRegisterTaskRepository.updateById(finalTask);
                         } finally {
@@ -640,7 +785,7 @@ public class TtRegisterService {
                     // 调用主板机注册流程
                     String result;
                     try {
-                        result = registerMainboardDeviceWithoutStart(phoneId, serverIp, round, 0, tiktokVersionDir, task.getCountry(), emailMode, task.getAdbPort());
+                        result = registerMainboardDeviceWithoutStart(phoneId, serverIp, round, 0, tiktokVersionDir, task.getCountry(), emailMode, task.getAdbPort(), task.getAppiumServer());
                     } catch (Exception e) {
                         log.error("主板机任务 {} - 设备 {} 第 {} 轮注册时发生未捕获异常", task.getTaskId(), phoneId, round, e);
                         result = "FAILED: 注册流程异常 - " + e.getMessage();
@@ -700,7 +845,7 @@ public class TtRegisterService {
                     // 调用主板机注册流程
                     String result;
                     try {
-                        result = registerMainboardDeviceWithoutStart(phoneId, serverIp, i, targetCount, tiktokVersionDir, task.getCountry(), emailMode, task.getAdbPort());
+                        result = registerMainboardDeviceWithoutStart(phoneId, serverIp, i, targetCount, tiktokVersionDir, task.getCountry(), emailMode, task.getAdbPort(), task.getAppiumServer());
                     } catch (Exception e) {
                         log.error("主板机任务 {} - 设备 {} 第 {} 个账号注册时发生未捕获异常", task.getTaskId(), phoneId, i, e);
                         result = "FAILED: 注册流程异常 - " + e.getMessage();
@@ -797,7 +942,12 @@ public class TtRegisterService {
                         log.warn("任务 {} - 设备 {} 第 {} 轮注册失败: {}", task.getTaskId(), phoneId, round, result);
                     }
                     
-                    // 心跳更新：每轮注册完成后更新 updated_at，表明任务仍在执行
+                    // 心跳前先检查是否被手动在库中改为 STOPPED，避免覆盖
+                    if (syncStoppedFromDb(task)) {
+                        log.info("任务 {} - 设备 {} 检测到数据库已 STOPPED，退出", task.getTaskId(), phoneId);
+                        ttRegisterTaskRepository.updateById(task);
+                        break;
+                    }
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
                     
@@ -859,13 +1009,23 @@ public class TtRegisterService {
                         log.warn("任务 {} - 设备 {} 第 {} 个账号注册失败: {}", task.getTaskId(), phoneId, i, result);
                     }
                     
-                    // 心跳更新：每个账号注册完成后更新 updated_at，表明任务仍在执行
+                    // 心跳前先检查是否被手动在库中改为 STOPPED，避免覆盖
+                    if (syncStoppedFromDb(task)) {
+                        log.info("任务 {} - 设备 {} 检测到数据库已 STOPPED，退出，已完成 {}/{}", task.getTaskId(), phoneId, i, targetCount);
+                        ttRegisterTaskRepository.updateById(task);
+                        break;
+                    }
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
                     
                     Thread.sleep(5000); // 每个账号之间休息5秒
                 }
                 
+                // 完成前再检查一次，避免最后一步被手动改为 STOPPED 后仍写成 COMPLETED
+                if (syncStoppedFromDb(task)) {
+                    ttRegisterTaskRepository.updateById(task);
+                    return;
+                }
                 // 更新任务状态为已完成
                 task.setStatus("COMPLETED");
                 task.setUpdatedAt(LocalDateTime.now());
@@ -880,18 +1040,269 @@ public class TtRegisterService {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("任务 {} - 设备 {} 执行异常", task.getTaskId(), phoneId, e);
-            task.setStatus("FAILED");
+            // 无限循环任务，异常时不设置FAILED状态；若库中已为 STOPPED 则不覆盖
+            if (syncStoppedFromDb(task)) {
+                ttRegisterTaskRepository.updateById(task);
+            } else {
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+            }
+        }
+    }
+
+    /**
+     * 执行留存任务（单设备）：取三天前符合条件的账号，逐个调用 RestoreApp + 留存脚本。
+     * targetCount=0 表示无限循环：每批最多 50 条，跑完再取下一批，直到任务被停止。
+     * targetCount>0 表示只跑一批（该条数），跑完即 COMPLETED。
+     */
+    private void executeRetentionTaskForDevice(TtRegisterTask task) {
+        String phoneId = task.getPhoneId();
+        String serverIp = task.getServerIp();
+        String country = (task.getCountry() != null && !task.getCountry().isEmpty()) ? task.getCountry() : "US";
+        boolean infinite = task.getTargetCount() != null && task.getTargetCount() == 0;
+        int batchLimit = (task.getTargetCount() != null && task.getTargetCount() > 0) ? task.getTargetCount() : 50;
+
+        String imagePath = task.getImagePath();
+        if (imagePath == null || imagePath.isEmpty()) {
+            imagePath = getDeviceImageName(phoneId, serverIp);
+            if (imagePath == null || imagePath.isEmpty()) {
+                log.error("留存任务 {} - 获取设备镜像失败", task.getTaskId());
+                task.setStatus("FAILED");
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+                return;
+            }
+        }
+        String appiumServer = task.getAppiumServer();
+        if (appiumServer == null || appiumServer.isEmpty()) {
+            appiumServer = "10.13.55.85";
+        }
+        String packageName = "com.zhiliaoapp.musically";
+        int totalSuccess = 0;
+        int totalFail = 0;
+
+        while (true) {
+            if (stoppedTaskIds.contains(task.getTaskId())) {
+                task.setStatus("STOPPED");
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+                log.info("留存任务 {} - 已停止，累计成功: {}, 失败: {}", task.getTaskId(), totalSuccess, totalFail);
+                return;
+            }
+            if (syncStoppedFromDb(task)) {
+                log.info("留存任务 {} - 检测到数据库已 STOPPED，退出", task.getTaskId());
+                ttRegisterTaskRepository.updateById(task);
+                return;
+            }
+            LocalDateTime cutoff = LocalDateTime.now().minusDays(3);
+            // 24小时内做过留存的账号不再进入本次留存
+            LocalDateTime retentionCutoff = LocalDateTime.now().minusHours(24);
+            List<TtAccountRegister> accounts = ttAccountRegisterRepository.listForRetention(cutoff, country, batchLimit, retentionCutoff);
+            if (accounts == null || accounts.isEmpty()) {
+                if (infinite) {
+                    log.info("留存任务 {} - 本批无符合条件账号（cutoff={}, country={}），60秒后重试", task.getTaskId(), cutoff, country);
+                    if (syncStoppedFromDb(task)) {
+                        ttRegisterTaskRepository.updateById(task);
+                        return;
+                    }
+                    task.setUpdatedAt(LocalDateTime.now());
+                    ttRegisterTaskRepository.updateById(task);
+                    try {
+                        Thread.sleep(60000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        task.setStatus("STOPPED");
+                        task.setUpdatedAt(LocalDateTime.now());
+                        ttRegisterTaskRepository.updateById(task);
+                        return;
+                    }
+                    continue;
+                } else {
+                    log.info("留存任务 {} - 无符合条件账号，任务结束", task.getTaskId());
+                    task.setStatus("COMPLETED");
+                    task.setUpdatedAt(LocalDateTime.now());
+                    ttRegisterTaskRepository.updateById(task);
+                    log.info("留存任务 {} - 完成，成功: {}, 失败: {}", task.getTaskId(), totalSuccess, totalFail);
+                    return;
+                }
+            }
+            int batchSuccess = 0;
+            int batchFail = 0;
+            for (int i = 0; i < accounts.size(); i++) {
+                if (stoppedTaskIds.contains(task.getTaskId())) {
+                    task.setStatus("STOPPED");
+                    task.setUpdatedAt(LocalDateTime.now());
+                    ttRegisterTaskRepository.updateById(task);
+                    log.info("留存任务 {} - 已停止，累计成功: {}, 失败: {}", task.getTaskId(), totalSuccess + batchSuccess, totalFail + batchFail);
+                    return;
+                }
+                TtAccountRegister account = accounts.get(i);
+                // 本机级别的留存去重：同一账号在 24 小时内只处理一次
+                Instant existing = retentionProcessingCache.asMap()
+                        .putIfAbsent(account.getId(), Instant.now());
+                if (existing != null) {
+                    log.info("留存任务 {} - 账号 id={} 已在本机缓存中标记为处理中/已处理，跳过本次留存", 
+                            task.getTaskId(), account.getId());
+                    continue;
+                }
+                if (account.getGaid() == null || account.getGaid().isEmpty()) {
+                    log.warn("留存任务 {} - 账号 id={} 无 gaid，跳过", task.getTaskId(), account.getId());
+                    batchFail++;
+                    continue;
+                }
+                if (syncStoppedFromDb(task)) {
+                    ttRegisterTaskRepository.updateById(task);
+                    return;
+                }
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+                // 根据账号注册时的安卓版本调整镜像中的 androidXX 段，确保与备份时一致
+                String imagePathForRestore = adjustImagePathForAndroidVersion(imagePath, account.getAndroidVersion());
+                try {
+                    apiService.restoreApp(phoneId, serverIp, packageName, imagePathForRestore, account.getGaid());
+                } catch (Exception e) {
+                    log.error("留存任务 {} - RestoreApp 失败: gaid={}, imagePath={}", task.getTaskId(), account.getGaid(), imagePathForRestore, e);
+                    batchFail++;
+                    continue;
+                }
+                // 恢复成功后调用 TTFarmSetupNetwork 设置网络/IP
+                try {
+                    boolean setupOk = apiService.ttFarmSetupNetwork(phoneId, serverIp, country, true);
+                    if (!setupOk) {
+                        log.warn("留存任务 {} - TTFarmSetupNetwork 调用失败，但继续执行留存脚本: phoneId={}, gaid={}",
+                                task.getTaskId(), phoneId, account.getGaid());
+                    } else {
+                        log.info("留存任务 {} - TTFarmSetupNetwork 调用成功: phoneId={}, gaid={}",
+                                task.getTaskId(), phoneId, account.getGaid());
+                    }
+                } catch (Exception e) {
+                    log.error("留存任务 {} - 调用 TTFarmSetupNetwork 接口时出错: gaid={}", task.getTaskId(), account.getGaid(), e);
+                }
+                // 留存脚本参数：offerid, phoneId, phoneServerIp, country, retention_hours
+                int retentionExitCode = executeRetentionScript(phoneId, serverIp, appiumServer, country);
+                // 只有 exitCode=0 视为脚本成功；8 视为失败（但需要更新 need_retention）
+                boolean scriptOk = (retentionExitCode == 0);
+                if (retentionExitCode == 8) {
+                    // 留存脚本返回8：账号登出，标记 need_retention=2，后续不再进入留存筛选
+                    try {
+                        ttAccountRegisterRepository.updateNeedRetention(account.getId(), 2);
+                        log.info("留存任务 {} - 账号登出（exitCode=8），已更新need_retention=2: accountId={}, gaid={}",
+                                task.getTaskId(), account.getId(), account.getGaid());
+                    } catch (Exception e) {
+                        log.warn("留存任务 {} - 更新need_retention=2失败: accountId={}, gaid={}",
+                                task.getTaskId(), account.getId(), account.getGaid(), e);
+                    }
+                }
+                if (scriptOk) batchSuccess++;
+                else batchFail++;
+                // 无论脚本成功或失败都调用备份接口，并写入留存记录表（含 script_success、backup_success）
+                boolean backupOk = false;
+                try {
+                    backupOk = apiService.backupApp(phoneId, serverIp, "com.zhiliaoapp.musically");
+                    if (backupOk) {
+                        log.info("留存任务 {} - 备份接口调用成功: phoneId={}, gaid={}", task.getTaskId(), phoneId, account.getGaid());
+                    } else {
+                        log.warn("留存任务 {} - 备份接口调用失败: phoneId={}, gaid={}", task.getTaskId(), phoneId, account.getGaid());
+                    }
+                } catch (Exception e) {
+                    log.error("留存任务 {} - 调用备份接口时出错: gaid={}", task.getTaskId(), account.getGaid(), e);
+                }
+                TtRetentionRecord record = new TtRetentionRecord();
+                record.setTaskId(task.getTaskId());
+                record.setPhoneId(phoneId);
+                record.setPhoneServerIp(serverIp);
+                record.setAccountRegisterId(account.getId());
+                record.setGaid(account.getGaid());
+                record.setScriptSuccess(scriptOk);
+                record.setBackupSuccess(backupOk);
+                record.setCreatedAt(LocalDateTime.now());
+                try {
+                    ttRetentionRecordRepository.insert(record);
+                } catch (Exception ex) {
+                    log.warn("留存任务 {} - 写入留存记录表失败: gaid={}", task.getTaskId(), account.getGaid(), ex);
+                }
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    task.setStatus("STOPPED");
+                    task.setUpdatedAt(LocalDateTime.now());
+                    ttRegisterTaskRepository.updateById(task);
+                    return;
+                }
+            }
+            totalSuccess += batchSuccess;
+            totalFail += batchFail;
+            log.info("留存任务 {} - 本批完成，本批成功: {}, 失败: {}，累计成功: {}, 失败: {}", task.getTaskId(), batchSuccess, batchFail, totalSuccess, totalFail);
+
+            if (!infinite) {
+                if (syncStoppedFromDb(task)) {
+                    ttRegisterTaskRepository.updateById(task);
+                    return;
+                }
+                task.setStatus("COMPLETED");
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+                log.info("留存任务 {} - 完成，成功: {}, 失败: {}", task.getTaskId(), totalSuccess, totalFail);
+                return;
+            }
+            if (syncStoppedFromDb(task)) {
+                ttRegisterTaskRepository.updateById(task);
+                return;
+            }
             task.setUpdatedAt(LocalDateTime.now());
             ttRegisterTaskRepository.updateById(task);
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                task.setStatus("STOPPED");
+                task.setUpdatedAt(LocalDateTime.now());
+                ttRegisterTaskRepository.updateById(task);
+                return;
+            }
         }
+    }
+
+    /**
+     * 执行留存脚本（与注册脚本同目录，脚本名可配置）
+     */
+    /**
+     * 执行留存脚本
+     * 返回脚本退出码：0=正常成功，8=账号登出（视为失败，仅用于更新need_retention），其它=失败
+     */
+    private int executeRetentionScript(String phoneId, String serverIp, String scriptHost, String country) {
+        String scriptPath = "/data/appium/com_zhiliaoapp_musically/" + retentionScriptName;
+        String offerid = "test";
+        int scriptTimeoutMinutes = 20;
+        String retentionHours = "1";
+        String command = String.format(
+                "cd /data/appium/com_zhiliaoapp_musically && timeout %dm stdbuf -o0 -e0 python3 -u %s %s %s %s %s %s",
+                scriptTimeoutMinutes, scriptPath, offerid, phoneId, serverIp, country, retentionHours);
+        log.info("{} - 执行留存脚本: {} 在服务器 {}", phoneId, scriptPath, scriptHost);
+        SshUtil.SshResult result = sshCommand(scriptHost, command);
+        Integer exitCode = result.getExitCode();
+        if (exitCode != null) {
+            if (exitCode == 0) {
+                log.info("{} - 留存脚本执行成功 (exitCode=0)", phoneId);
+            } else if (exitCode == 8) {
+                // 8 表示账号登出，这里仅记录日志，业务上视为“脚本失败但需要做善后处理”
+                log.info("{} - 留存脚本返回账号登出 (exitCode=8)", phoneId);
+            } else {
+                log.warn("{} - 留存脚本执行失败, exitCode={}", phoneId, exitCode);
+            }
+        } else {
+            log.warn("{} - 留存脚本执行失败, exitCode=null", phoneId);
+        }
+        return exitCode != null ? exitCode : -1;
     }
     
     /**
      * 定时任务：检查长时间未更新的 RUNNING 任务，重置为 PENDING 以便重新执行
-     * 每5分钟检查一次
+     * 每5分钟执行一次
      * 注意：不会重置 STOPPED 状态的任务，即使它们长时间未更新
      */
-    // @Scheduled(fixedRate = 5 * 60 * 1000) // 每5分钟执行一次 - 已注释（主板机部署）
+    @Scheduled(fixedRate = 5 * 60 * 1000) // 每5分钟执行一次
     public void scheduledCheckStuckTasks() {
         try {
             // 计算1小时前的时间点
@@ -1674,34 +2085,39 @@ public class TtRegisterService {
      */
     public Map<String, Object> stopTask(String taskId) {
         TaskInfo taskInfo = taskInfoMap.get(taskId);
-        
-        if (taskInfo == null) {
+
+        // 1) 内存中有正在执行的任务：先标记停止，便于当前线程立刻退出
+        if (taskInfo != null) {
+            if ("RUNNING".equals(taskInfo.getStatus())) {
+                taskInfo.setStopped(true);
+                taskInfo.setStatus("STOPPED");
+                taskInfo.setEndTime(LocalDateTime.now());
+                log.info("任务 {} 已在内存中标记为停止", taskId);
+            } else {
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", false);
+                result.put("message", "任务当前状态为 " + taskInfo.getStatus() + "，无法停止");
+                return result;
+            }
+        }
+
+        // 2) 任务列表来自数据库，多数任务不在 taskInfoMap；必须同步 DB + stoppedTaskIds，否则报「任务不存在」
+        Map<String, Object> dbResult = stopTaskById(taskId);
+        if (Boolean.TRUE.equals(dbResult.get("success"))) {
+            return dbResult;
+        }
+
+        // 3) 仅存在于内存、库中无记录（或库状态已非 RUNNING/PENDING）时，若内存已停成功仍返回成功
+        if (taskInfo != null && "STOPPED".equals(taskInfo.getStatus())) {
             Map<String, Object> result = new HashMap<>();
-            result.put("success", false);
-            result.put("message", "任务不存在");
+            result.put("success", true);
+            result.put("message", "任务已停止");
+            result.put("taskId", taskId);
+            result.put("status", "STOPPED");
             return result;
         }
-        
-        if (!"RUNNING".equals(taskInfo.getStatus())) {
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", false);
-            result.put("message", "任务当前状态为 " + taskInfo.getStatus() + "，无法停止");
-            return result;
-        }
-        
-        // 设置停止标志
-        taskInfo.setStopped(true);
-        taskInfo.setStatus("STOPPED");
-        taskInfo.setEndTime(LocalDateTime.now());
-        
-        log.info("任务 {} 已标记为停止", taskId);
-        
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "任务已停止");
-        result.put("taskId", taskId);
-        result.put("status", "STOPPED");
-        return result;
+
+        return dbResult;
     }
     
     /**
@@ -1778,30 +2194,74 @@ public class TtRegisterService {
     }
     
     /**
-     * 获取所有任务列表
-     * 
-     * @return 所有任务列表
+     * 获取任务列表（分页）
+     *
+     * @param page 页码，从 1 开始
+     * @param size 每页条数
      */
-    public Map<String, Object> getAllTasks() {
+    public Map<String, Object> getAllTasks(int page, int size) {
         List<Map<String, Object>> taskList = new ArrayList<>();
-        
-        for (TaskInfo taskInfo : taskInfoMap.values()) {
-            Map<String, Object> taskMap = new HashMap<>();
-            taskMap.put("taskId", taskInfo.getTaskId());
-            taskMap.put("status", taskInfo.getStatus());
-            taskMap.put("serverIp", taskInfo.getServerIp());
-            taskMap.put("pid", taskInfo.getPid());
-            taskMap.put("logFile", taskInfo.getLogFile());
-            taskMap.put("startTime", taskInfo.getStartTime() != null ? taskInfo.getStartTime().toString() : null);
-            taskMap.put("endTime", taskInfo.getEndTime() != null ? taskInfo.getEndTime().toString() : null);
-            taskMap.put("successCount", taskInfo.getSuccessCount());
-            taskMap.put("failCount", taskInfo.getFailCount());
-            taskMap.put("totalCount", taskInfo.getTotalCount());
-            taskMap.put("phoneIds", taskInfo.getPhoneIds());
-            taskList.add(taskMap);
+
+        if (page < 1) {
+            page = 1;
         }
-        
-        // 按开始时间倒序排序
+        if (size <= 0) {
+            size = 20;
+        }
+
+        // 1) 先取数据库里的任务（包含历史），按 created_at 倒序，分页
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TtRegisterTask> wrapper =
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<TtRegisterTask> pageReq =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size);
+        com.baomidou.mybatisplus.core.metadata.IPage<TtRegisterTask> pageResult =
+                ttRegisterTaskRepository.selectPage(pageReq, wrapper);
+
+        for (TtRegisterTask task : pageResult.getRecords()) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("taskId", task.getTaskId());
+            m.put("status", task.getStatus());
+            m.put("serverIp", task.getServerIp());
+            m.put("pid", null);
+            m.put("logFile", null);
+            m.put("startTime", task.getCreatedAt() != null ? task.getCreatedAt().toString() : null);
+            m.put("endTime", task.getUpdatedAt() != null ? task.getUpdatedAt().toString() : null);
+            m.put("successCount", null);
+            m.put("failCount", null);
+            m.put("totalCount", task.getTargetCount());
+            m.put("phoneIds", java.util.Collections.singletonList(task.getPhoneId()));
+            taskList.add(m);
+        }
+
+        // 2) 再把当前内存中运行的任务信息覆盖进去（保证状态实时）
+        for (TaskInfo taskInfo : taskInfoMap.values()) {
+            Map<String, Object> override = new HashMap<>();
+            override.put("taskId", taskInfo.getTaskId());
+            override.put("status", taskInfo.getStatus());
+            override.put("serverIp", taskInfo.getServerIp());
+            override.put("pid", taskInfo.getPid());
+            override.put("logFile", taskInfo.getLogFile());
+            override.put("startTime", taskInfo.getStartTime() != null ? taskInfo.getStartTime().toString() : null);
+            override.put("endTime", taskInfo.getEndTime() != null ? taskInfo.getEndTime().toString() : null);
+            override.put("successCount", taskInfo.getSuccessCount());
+            override.put("failCount", taskInfo.getFailCount());
+            override.put("totalCount", taskInfo.getTotalCount());
+            override.put("phoneIds", taskInfo.getPhoneIds());
+
+            // 如果列表中已存在相同 taskId，则覆盖；否则不追加，避免打破分页大小
+            boolean replaced = false;
+            for (int i = 0; i < taskList.size(); i++) {
+                if (override.get("taskId").equals(taskList.get(i).get("taskId"))) {
+                    taskList.set(i, override);
+                    replaced = true;
+                    break;
+                }
+            }
+            // 如果当前页没有这个 taskId（比如它在其他页），这里不再追加，保持单页条数不超过 size
+        }
+
+        // 按开始时间倒序
         taskList.sort((a, b) -> {
             String timeA = (String) a.get("startTime");
             String timeB = (String) b.get("startTime");
@@ -1810,12 +2270,88 @@ public class TtRegisterService {
             if (timeB == null) return -1;
             return timeB.compareTo(timeA);
         });
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);
         result.put("data", taskList);
-        result.put("total", taskList.size());
+        result.put("total", pageResult.getTotal());
+        result.put("page", page);
+        result.put("size", size);
         return result;
+    }
+
+    /**
+     * 更新任务配置（写入 tt_register_task 表，可从任务小窝编辑）
+     */
+    public Map<String, Object> updateTaskConfig(Map<String, Object> req) {
+        String taskId = (String) req.get("taskId");
+        if (taskId == null || taskId.isEmpty()) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("success", false);
+            res.put("message", "taskId 不能为空");
+            return res;
+        }
+        TtRegisterTask task = ttRegisterTaskRepository.findByTaskId(taskId);
+        if (task == null) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("success", false);
+            res.put("message", "任务不存在");
+            return res;
+        }
+
+        if (req.containsKey("country")) task.setCountry((String) req.get("country"));
+        if (req.containsKey("sdk")) task.setSdk((String) req.get("sdk"));
+        if (req.containsKey("imagePath")) task.setImagePath((String) req.get("imagePath"));
+        if (req.containsKey("gaidTag")) task.setGaidTag((String) req.get("gaidTag"));
+        if (req.containsKey("dynamicIpChannel")) task.setDynamicIpChannel((String) req.get("dynamicIpChannel"));
+        if (req.containsKey("staticIpChannel")) task.setStaticIpChannel((String) req.get("staticIpChannel"));
+        if (req.containsKey("biz")) task.setBiz((String) req.get("biz"));
+        if (req.containsKey("targetCount")) {
+            Object v = req.get("targetCount");
+            Integer tc = null;
+            if (v instanceof Number) tc = ((Number) v).intValue();
+            else if (v instanceof String && !((String) v).isEmpty()) {
+                try { tc = Integer.parseInt((String) v); } catch (NumberFormatException ignored) {}
+            }
+            task.setTargetCount(tc);
+        }
+        task.setUpdatedAt(LocalDateTime.now());
+        ttRegisterTaskRepository.updateById(task);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("success", true);
+        res.put("message", "任务配置已更新");
+        res.put("taskId", taskId);
+        return res;
+    }
+
+    /**
+     * 恢复任务：将任务状态改为 PENDING，交给调度线程重新捞任务执行
+     */
+    public Map<String, Object> resumeTask(String taskId) {
+        if (taskId == null || taskId.isEmpty()) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("success", false);
+            res.put("message", "taskId 不能为空");
+            return res;
+        }
+        TtRegisterTask task = ttRegisterTaskRepository.findByTaskId(taskId);
+        if (task == null) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("success", false);
+            res.put("message", "任务不存在");
+            return res;
+        }
+        task.setStatus("PENDING");
+        task.setUpdatedAt(LocalDateTime.now());
+        ttRegisterTaskRepository.updateById(task);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("success", true);
+        res.put("message", "任务已恢复为待执行状态");
+        res.put("taskId", taskId);
+        res.put("status", "PENDING");
+        return res;
     }
 
     /**
@@ -1905,16 +2441,11 @@ public class TtRegisterService {
                 gaidTag = extractGaidTagFromPhoneId(phoneId);
             }
             
-            // 每次调用ResetPhoneEnv时都随机选择动态IP渠道（忽略前端传入的值）
-            String[] channels = {"ipidea", "closeli", "ipbiubiu"};
-            int randomIndex = ThreadLocalRandom.current().nextInt(channels.length);
-            String dynamicIpChannel = channels[randomIndex];
-            log.info("{} {} - 动态IP渠道随机选择: {} (索引: {})", logPrefix, phoneId, dynamicIpChannel, randomIndex);
-            
-            String staticIpChannel = resetParams.getOrDefault("staticIpChannel", defaultStaticIpChannel);
-            if (staticIpChannel == null) {
-                staticIpChannel = defaultStaticIpChannel;
-            }
+            // 动态/静态 IP 渠道固定写死为后端约定值，忽略前端传入及随机逻辑
+            String dynamicIpChannel = "netnut_biu";
+            String staticIpChannel = "ipidea";
+            log.info("{} {} - 使用固定IP渠道: dynamicIpChannel={}, staticIpChannel={}", 
+                    logPrefix, phoneId, dynamicIpChannel, staticIpChannel);
             
             String biz = resetParams.getOrDefault("biz", "");
             
@@ -1926,7 +2457,7 @@ public class TtRegisterService {
             Map<String, Object> resetResult = null;
             String realIp = null;
             String gaid = null;
-            int maxRetries = 5;
+            int maxRetries = 3;  // 统一降为3次重试，减少连接数放大
             int retryCount = 0;
             boolean resetSuccess = false;
             
@@ -1957,17 +2488,31 @@ public class TtRegisterService {
                                 logPrefix, phoneId, serverIp, currentConcurrency, MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER);
                         
                         try {
-                resetResult = apiService.resetPhoneEnv(
-                    phoneId,
-                    serverIp,
-                    country,
-                    sdk,
-                    imagePath,
-                    gaidTag,
-                    dynamicIpChannel,
-                    staticIpChannel,
-                    biz
-                );
+                            // 10.7 网段仍调用 ResetPhoneEnv；10.13 网段改为调用 TTFarmResetPhone（xray_server_ip 暂写死）
+                            if (serverIp != null && serverIp.startsWith("10.13.")) {
+                                resetResult = apiService.ttFarmResetPhone(
+                                        phoneId,
+                                        serverIp,
+                                        "192.168.41.84",
+                                        country,
+                                        sdk,
+                                        imagePath,
+                                        dynamicIpChannel,
+                                        false
+                                );
+                            } else {
+                                resetResult = apiService.resetPhoneEnv(
+                                        phoneId,
+                                        serverIp,
+                                        country,
+                                        sdk,
+                                        imagePath,
+                                        gaidTag,
+                                        dynamicIpChannel,
+                                        staticIpChannel,
+                                        biz
+                                );
+                            }
                             long apiCallDuration = System.currentTimeMillis() - apiCallStartTime;
                             log.info("{} {} - ResetPhoneEnv接口调用完成，耗时: {}ms", logPrefix, phoneId, apiCallDuration);
                         } catch (Exception e) {
@@ -2122,9 +2667,19 @@ public class TtRegisterService {
                     gaid = gaidObj.toString();
                 }
             log.info("{} {} - ResetPhoneEnv成功, real_ip={}, gaid={}, 重试次数: {}", logPrefix, phoneId, realIp, gaid, retryCount);
-                
-                Thread.sleep(10000); // 等待reset和换机完成
-            
+
+            Thread.sleep(10000); // 等待reset和换机完成
+
+            // 2.4 如果是 MX 国家，调整该设备的 xray 动态代理为 gate1.ipweb.cc:7778 且随机 user
+            if ("MX".equalsIgnoreCase(country)) {
+                log.info("{} {} - 步骤2.4: 调整 MX 国家设备的 xray 动态代理配置", logPrefix, phoneId);
+                adjustXrayDynamicForMx(phoneId, serverIp);
+            }
+
+            // 2.5 可选：执行 change_after_reset.sh（如果存在）
+            log.info("{} {} - 步骤2.5: 检查并执行 change_after_reset.sh（如存在）", logPrefix, phoneId);
+            runChangeAfterResetIfExists(phoneId, serverIp);
+
             // 3. 安装TikTok APK
             log.info("{} {} - 步骤2: 安装TikTok APK", logPrefix, phoneId);
             boolean installSuccess = installTikTokApk(phoneId, serverIp, tiktokVersionDir);
@@ -2136,7 +2691,7 @@ public class TtRegisterService {
             Thread.sleep(5000);
             
             // 3.5. 添加hook配置
-            log.info("{} {} - 步骤2.5: 添加hook配置", logPrefix, phoneId);
+            log.info("{} {} - 步骤2.6: 添加hook配置", logPrefix, phoneId);
             boolean hookConfigSuccess = addAppHookConfig(phoneId, serverIp);
             if (!hookConfigSuccess) {
                 log.warn("{} {} - 添加hook配置失败，但继续执行", logPrefix, phoneId);
@@ -2169,6 +2724,12 @@ public class TtRegisterService {
             context.setGaid(gaid);
             context.setTiktokVersion(tiktokVersion);
             context.setCountry(country);
+            // 从 resetParams 中获取 Appium 服务器地址
+            String appiumServer = resetParams != null ? resetParams.getOrDefault("appiumServer", null) : null;
+            if (appiumServer != null && !appiumServer.isEmpty()) {
+                context.setAppiumServer(appiumServer);
+                log.info("{} {} - 使用任务指定的 Appium 服务器: {}", logPrefix, phoneId, appiumServer);
+            }
             
             boolean registerSuccess = executeRegisterScript(context, emailMode);
             if (!registerSuccess) {
@@ -2202,7 +2763,7 @@ public class TtRegisterService {
      * @return 注册结果
      */
     private String registerMainboardDeviceWithoutStart(String phoneId, String serverIp, int currentIndex, int totalCount, 
-                                                       String tiktokVersionDir, String countryCode, String emailMode, String adbPort) {
+                                                       String tiktokVersionDir, String countryCode, String emailMode, String adbPort, String appiumServer) {
         try {
             String logPrefix = formatLogPrefix(currentIndex, totalCount);
             
@@ -2304,6 +2865,16 @@ public class TtRegisterService {
                 log.info("{} {} - 使用adb_port: {}", logPrefix, phoneId, adbPort);
             }
             
+            // 使用任务中指定的 Appium 服务器
+            if (appiumServer != null && !appiumServer.isEmpty()) {
+                context.setAppiumServer(appiumServer);
+                log.info("{} {} - 使用任务指定的 Appium 服务器: {}", logPrefix, phoneId, appiumServer);
+            } else {
+                // 如果没有指定，使用默认服务器
+                context.setAppiumServer("10.13.55.85");
+                log.warn("{} {} - 任务中未指定 Appium 服务器，使用默认值: 10.13.55.85", logPrefix, phoneId);
+            }
+            
             boolean registerSuccess = executeRegisterScript(context, emailMode);
             if (!registerSuccess) {
                 log.error("{} {} - 调用注册脚本失败", logPrefix, phoneId);
@@ -2320,46 +2891,6 @@ public class TtRegisterService {
         } catch (Exception e) {
             log.error("{} - 主板机注册过程异常", phoneId, e);
             return "FAILED: " + e.getMessage();
-        }
-    }
-
-    /**
-     * 获取换机json（通过gRPC调用）
-     * 
-     * @deprecated 已废弃，现在使用ResetPhoneEnv接口来合并reset和换机功能
-     * @param phoneId 云手机ID
-     * @param serverIp 服务器IP
-     * @return 换机json字符串
-     */
-    @Deprecated
-    private String getChangeDeviceJson(String phoneId, String serverIp) {
-        try {
-            log.info("{} - 通过gRPC调用获取换机json", phoneId);
-            
-            // 通过gRPC调用获取换机json
-            // 根据proto定义，需要以下参数：
-            // - sdk: SDK版本（默认33）
-            // - countryCode: 国家代码（默认US）
-            // - appId: 应用ID（必填，默认com.zhiliaoapp.musically）
-            // - needInstallApps: 是否需要安装的app列表（默认false）
-            String phoneJson = phoneCenterGrpcService.getFastSwitchJson(
-                "33",  // sdk - SDK版本，使用33
-                "US",  // countryCode - 国家代码，使用US
-                "com.zhiliaoapp.musically",  // appId - TikTok应用ID（必填）
-                false  // needInstallApps - 是否需要安装的app列表
-            );
-            
-            if (phoneJson == null || phoneJson.isEmpty()) {
-                log.error("{} - gRPC返回的换机json为空", phoneId);
-                return null;
-            }
-            
-            log.info("{} - 成功获取换机json", phoneId);
-            return phoneJson;
-            
-        } catch (Exception e) {
-            log.error("{} - 通过gRPC获取换机json失败", phoneId, e);
-            return null;
         }
     }
 
@@ -2734,6 +3265,7 @@ public class TtRegisterService {
         private String tiktokVersion;
         private String country;
         private String adbPort;
+        private String appiumServer;  // Appium服务器地址
         private LocalDateTime scriptStartTime;
         
         // Getters and Setters
@@ -2757,6 +3289,8 @@ public class TtRegisterService {
         public void setCountry(String country) { this.country = country; }
         public String getAdbPort() { return adbPort; }
         public void setAdbPort(String adbPort) { this.adbPort = adbPort; }
+        public String getAppiumServer() { return appiumServer; }
+        public void setAppiumServer(String appiumServer) { this.appiumServer = appiumServer; }
         public LocalDateTime getScriptStartTime() { return scriptStartTime; }
         public void setScriptStartTime(LocalDateTime scriptStartTime) { this.scriptStartTime = scriptStartTime; }
     }
@@ -2776,27 +3310,32 @@ public class TtRegisterService {
         String serverIp = context.getServerIp();
         try {
             // 注册脚本在Appium服务器上，使用root用户
-            // 脚本路径：/data/appium/com_zhiliaoapp_musically/tiktok_register_us_motherboard.py
-            // 脚本参数：offerid phoneId phoneServerIp appiumServer country
-            String scriptHost = mainboardAppiumServer; // 从环境变量读取Appium服务器地址
-            String scriptPath = "/data/appium/com_zhiliaoapp_musically/tiktok_register_us_motherboard.py";
+            // 优先使用任务中指定的 Appium 服务器，如果没有则使用默认值
+            String scriptHost = context.getAppiumServer();
+            if (scriptHost == null || scriptHost.isEmpty()) {
+                scriptHost = "10.13.55.85"; // 默认 Appium 服务器地址（向后兼容）
+                log.warn("{} - 任务中未指定 Appium 服务器，使用默认值: {}", phoneId, scriptHost);
+            }
+
+            // 根据国家选择对应的注册脚本
+            String country = context.getCountry();
+            if (country == null || country.isEmpty()) {
+                country = "US"; // 默认国家代码
+            }
+            String scriptPath;
+            if ("BR".equalsIgnoreCase(country)) {
+                scriptPath = "/data/appium/com_zhiliaoapp_musically/tiktok_register_br_test_account.py";
+            } else {
+                scriptPath = "/data/appium/com_zhiliaoapp_musically/tiktok_register_us_test_account.py";
+            }
             
             // 构建命令参数：传递所有5个参数
             // 参数顺序：offerid phoneId phoneServerIp appiumServer country
             String offerid = "test";
             String appiumServer = getRandomAppiumServer(); // 随机选择Appium服务器端口，避免单点瓶颈
-            String country = context.getCountry();
-            if (country == null || country.isEmpty()) {
-                country = "US"; // 默认国家代码
-            }
             
-            // 主板机部署：如果serverIp是127.0.0.1（本地），则使用环境变量中的外网IP传给脚本
-            // 因为脚本在Appium服务器上执行，需要知道主板机服务器的外网IP
+            // 云手机直接使用serverIp，不需要IP映射
             String phoneServerIpForScript = serverIp;
-            if ("127.0.0.1".equals(serverIp) || "localhost".equals(serverIp)) {
-                phoneServerIpForScript = mainboardPublicIp; // 使用环境变量中的外网IP
-                log.debug("{} - 检测到本地IP({})，使用外网IP({})传给脚本", phoneId, serverIp, phoneServerIpForScript);
-            }
             
             // 使用 python3 -u 禁用缓冲，确保输出实时发送
             // 使用 stdbuf -o0 进一步确保无缓冲输出
@@ -2921,8 +3460,11 @@ public class TtRegisterService {
                         saveFailureRecord(context, "REAL_EMAIL");
                     }
                 } else {
-                    // 假邮箱或输出为空，保存普通失败记录
-                    saveFailureRecord(context, "outlook".equals(emailMode) ? "REAL_EMAIL" : "FAKE_EMAIL");
+                    // 假邮箱超时场景：尽量解析并落库 email/password，失败再写普通失败记录
+                    boolean saved = trySaveFailedFakeEmailRecord(output, context);
+                    if (!saved) {
+                        saveFailureRecord(context, "outlook".equals(emailMode) ? "REAL_EMAIL" : "FAKE_EMAIL");
+                    }
                 }
                 
                 return false;
@@ -3012,14 +3554,19 @@ public class TtRegisterService {
                         String registerType = accountRegister.getRegisterType();
                         
                         if ("FAKE_EMAIL".equals(registerType)) {
-                            // 假邮箱：需要is_2fa_setup_success为true
-                            Boolean is2faSetupSuccess = accountRegister.getIs2faSetupSuccess();
-                            if (Boolean.TRUE.equals(is2faSetupSuccess) && Boolean.TRUE.equals(accountRegister.getRegisterSuccess())) {
+                            // 假邮箱：只要registerSuccess为true且is_2fa_setup_success为1(true)或2(DELAYED)，都调用备份
+                            Integer is2faSetupSuccess = accountRegister.getIs2faSetupSuccess();
+                            boolean is2faEligible = (is2faSetupSuccess != null &&
+                                    (is2faSetupSuccess == 1 || is2faSetupSuccess == 2));
+                            if (is2faEligible && Boolean.TRUE.equals(accountRegister.getRegisterSuccess())) {
                                 shouldBackup = true;
-                                log.info("{} - 假邮箱注册成功且2FA设置成功，需要调用备份接口", phoneId);
+                                log.info("{} - 假邮箱注册成功且2FA状态为 {}，需要调用备份接口", phoneId, 
+                                        is2faSetupSuccess == 1 ? "TRUE" : "DELAYED");
                             } else {
-                                log.info("{} - 假邮箱注册成功但2FA设置未成功，不调用备份接口: is_2fa_setup_success={}, registerSuccess={}", 
-                                        phoneId, is2faSetupSuccess, accountRegister.getRegisterSuccess());
+                                String statusDesc = is2faSetupSuccess == null ? "null" :
+                                    (is2faSetupSuccess == 1 ? "true" : (is2faSetupSuccess == 2 ? "DELAYED" : "false"));
+                                log.info("{} - 假邮箱注册成功但不满足备份条件: is_2fa_setup_success={}({}), registerSuccess={}", 
+                                        phoneId, is2faSetupSuccess, statusDesc, accountRegister.getRegisterSuccess());
                             }
                         } else if ("REAL_EMAIL".equals(registerType)) {
                             // 真邮箱：只需要registerSuccess为true
@@ -3137,8 +3684,39 @@ public class TtRegisterService {
                     log.error("{} - 注册脚本执行失败，无法获取退出码", phoneId);
                 }
                 
-                // 保存失败记录到数据库（根据 emailMode 设置注册类型）
-                saveFailureRecord(context, "outlook".equals(emailMode) ? "REAL_EMAIL" : "FAKE_EMAIL");
+                // 对于真实邮箱模式，即使失败也要尝试解析输出中的outlook_info等信息（已花费成本）
+                if ("outlook".equals(emailMode) && output != null && !output.trim().isEmpty()) {
+                    log.info("{} - 脚本执行失败，但尝试解析已获取的Outlook邮箱信息", phoneId);
+                    TtAccountRegister partialRecord = parseRegisterOutputPartial(output, context);
+                    if (partialRecord != null) {
+                        // 解析成功，保存部分记录
+                        partialRecord.setRegisterSuccess(false); // 标记为失败
+                        partialRecord.setRegisterType("REAL_EMAIL");
+                        partialRecord.setCreatedAt(LocalDateTime.now());
+                        partialRecord.setUpdatedAt(LocalDateTime.now());
+                        
+                        int insertResult = ttAccountRegisterRepository.insert(partialRecord);
+                        if (insertResult > 0) {
+                            log.info("{} - 失败情况下已保存Outlook邮箱信息: email={}, outlookInfo长度={}", 
+                                    phoneId, partialRecord.getEmail(), 
+                                    partialRecord.getOutlookInfo() != null ? partialRecord.getOutlookInfo().length() : 0);
+                        } else {
+                            log.warn("{} - 失败情况下保存Outlook邮箱信息失败", phoneId);
+                            // 保存失败记录（没有邮箱信息）
+                            saveFailureRecord(context, "REAL_EMAIL");
+                        }
+                    } else {
+                        log.warn("{} - 脚本执行失败且无法从输出中解析到Outlook邮箱信息", phoneId);
+                        // 保存失败记录（没有邮箱信息）
+                        saveFailureRecord(context, "REAL_EMAIL");
+                    }
+                } else {
+                    // 假邮箱失败场景：尽量解析并落库 email/password，失败再写普通失败记录
+                    boolean saved = trySaveFailedFakeEmailRecord(output, context);
+                    if (!saved) {
+                        saveFailureRecord(context, "outlook".equals(emailMode) ? "REAL_EMAIL" : "FAKE_EMAIL");
+                    }
+                }
                 
                 return false;
             }
@@ -3154,8 +3732,18 @@ public class TtRegisterService {
             
             // 异常情况下也尝试清理可能的僵尸进程
             try {
-                String scriptPathForCleanup = "/data/appium/com_zhiliaoapp_musically/tiktok_register_us_motherboard.py";
-                String scriptHostForCleanup = mainboardAppiumServer; // 使用环境变量中的Appium服务器地址
+                // 根据国家选择对应的脚本路径进行清理
+                String country = context.getCountry();
+                if (country == null || country.isEmpty()) {
+                    country = "US";
+                }
+                String scriptPathForCleanup;
+                if ("BR".equalsIgnoreCase(country)) {
+                    scriptPathForCleanup = "/data/appium/com_zhiliaoapp_musically/tiktok_register_br_test_account.py";
+                } else {
+                    scriptPathForCleanup = "/data/appium/com_zhiliaoapp_musically/tiktok_register_us_test_account.py";
+                }
+                String scriptHostForCleanup = "10.13.55.85"; // 云手机Appium服务器地址
                 String killCmd = String.format(
                     "ps aux | grep -E 'python3.*%s.*%s' | grep -v grep | awk '{print $2}' | xargs -r kill -9 2>/dev/null || echo 'no_process'",
                     scriptPathForCleanup, phoneId
@@ -3219,6 +3807,8 @@ public class TtRegisterService {
             accountRegister.setIp(context.getRealIp());
             
             accountRegister.setTiktokVersion(context.getTiktokVersion());
+            // 设置国家代码
+            accountRegister.setCountry(context.getCountry());
             
             // 复用公共解析逻辑
             boolean foundAny = parseOutputToAccountRegister(output, accountRegister);
@@ -3228,7 +3818,8 @@ public class TtRegisterService {
                 return null;
             }
             
-            // 尝试从outlook_info JSON中提取email和password
+            // 尝试从outlook_info JSON中提取email（最后的后备方案）
+            // 注意：不提取password，因为outlook_info中的password是Outlook邮箱密码，不是TikTok注册密码
             extractInfoFromOutlookInfo(accountRegister);
             
             // 验证必要字段（email和password是必填的）
@@ -3242,11 +3833,20 @@ public class TtRegisterService {
                 return null;
             }
             
+            // 记录最终解析结果和password来源（用于问题定位）
+            // 注意：password只从脚本输出获取，不从outlook_info提取（outlook_info中的password是Outlook邮箱密码）
+            log.info("{} - [解析完成] 最终password值: {} (来源: 仅从脚本输出解析)", 
+                    phoneId, accountRegister.getPassword());
+            
+            // 格式化is2faSetupSuccess显示（1=true, 0=false, 2=DELAYED）
+            Integer is2faValue = accountRegister.getIs2faSetupSuccess();
+            String is2faDisplay = is2faValue == null ? "null" : 
+                (is2faValue == 1 ? "1(true)" : (is2faValue == 2 ? "2(DELAYED)" : "0(false)"));
             log.info("{} - 成功解析账号信息: email={}, username={}, behavior={}, ip={}, gaid={}, androidVersion={}, ipChannel={}, tiktokVersion={}, authenticatorKey={}, outlookInfo={}, is2faSetupSuccess={}", 
                     phoneId, accountRegister.getEmail(), accountRegister.getUsername(), accountRegister.getBehavior(),
                     accountRegister.getIp(), accountRegister.getGaid(), accountRegister.getAndroidVersion(),
                     accountRegister.getIpChannel(), accountRegister.getTiktokVersion(), accountRegister.getAuthenticatorKey(),
-                    accountRegister.getOutlookInfo(), accountRegister.getIs2faSetupSuccess());
+                    accountRegister.getOutlookInfo(), is2faDisplay);
             return accountRegister;
             
         } catch (Exception e) {
@@ -3298,7 +3898,8 @@ public class TtRegisterService {
                 return null;
             }
             
-            // 尝试从outlook_info JSON中提取email和password
+            // 尝试从outlook_info JSON中提取email（最后的后备方案）
+            // 注意：不提取password，因为outlook_info中的password是Outlook邮箱密码，不是TikTok注册密码
             extractInfoFromOutlookInfo(accountRegister);
             
             // 放宽验证条件：只要有outlook_info或email即可保存（不要求password）
@@ -3344,7 +3945,7 @@ public class TtRegisterService {
         }
         
         // 先尝试解析 key: value 格式（单行格式）
-        Pattern pattern1 = Pattern.compile("(?:^|\\n)\\s*(email|password|username|nickname_behavior_result|authenticator_key|outlook_info|is_2fa_setup_success)\\s*:\\s*(.+?)(?:\\n|$)", Pattern.MULTILINE);
+        Pattern pattern1 = Pattern.compile("(?:^|\\n)\\s*(email|password|username|nickname_behavior_result|authenticator_key|outlook_info|is_2fa_setup_success|need_retention)\\s*:\\s*(.+?)(?:\\n|$)", Pattern.MULTILINE);
         Matcher matcher1 = pattern1.matcher(output);
         
         while (matcher1.find()) {
@@ -3354,36 +3955,64 @@ public class TtRegisterService {
             
             switch (key) {
                 case "email":
-                    accountRegister.setEmail(value);
+                    if (accountRegister.getEmail() == null || accountRegister.getEmail().isEmpty()) {
+                        accountRegister.setEmail(value);
+                        log.info("{} - [key:value格式] 解析到email: {}", phoneId, value);
+                    } else {
+                        log.debug("{} - [key:value格式] email已存在，跳过: 已有值={}, 新值={}", phoneId, accountRegister.getEmail(), value);
+                    }
                     break;
                 case "password":
-                    accountRegister.setPassword(value);
+                    if (accountRegister.getPassword() == null || accountRegister.getPassword().isEmpty()) {
+                        accountRegister.setPassword(value);
+                        log.info("{} - [key:value格式] 解析到password: {}", phoneId, value);
+                    } else {
+                        log.warn("{} - [key:value格式] password已存在，跳过覆盖: 已有值={}, 新值={}", phoneId, accountRegister.getPassword(), value);
+                    }
                     break;
                 case "username":
-                    accountRegister.setUsername(value);
+                    if (accountRegister.getUsername() == null || accountRegister.getUsername().isEmpty()) {
+                        accountRegister.setUsername(value);
+                        log.debug("{} - [key:value格式] 解析到username: {}", phoneId, value);
+                    }
                     break;
                 case "nickname_behavior_result":
-                    accountRegister.setBehavior(value);
+                    if (accountRegister.getBehavior() == null || accountRegister.getBehavior().isEmpty()) {
+                        accountRegister.setBehavior(value);
+                        log.debug("{} - [key:value格式] 解析到nickname_behavior_result: {}", phoneId, value);
+                    }
                     break;
                 case "authenticator_key":
-                    accountRegister.setAuthenticatorKey(value);
+                    if (accountRegister.getAuthenticatorKey() == null || accountRegister.getAuthenticatorKey().isEmpty()) {
+                        accountRegister.setAuthenticatorKey(value);
+                        log.debug("{} - [key:value格式] 解析到authenticator_key: {}", phoneId, value);
+                    }
                     break;
                 case "outlook_info":
                     // 如果之前没有从多行格式解析到，则使用单行格式的值
                     if (accountRegister.getOutlookInfo() == null || accountRegister.getOutlookInfo().isEmpty()) {
                         accountRegister.setOutlookInfo(value);
+                        log.debug("{} - [key:value格式] 解析到outlook_info", phoneId);
                     }
                     break;
                 case "is_2fa_setup_success":
-                    Boolean boolValue = parseBooleanValue(value);
-                    accountRegister.setIs2faSetupSuccess(boolValue);
+                    // 支持 true→1, false→0, DELAYED→2 三种值
+                    Integer is2faValue = parseIs2faSetupSuccessValue(value);
+                    accountRegister.setIs2faSetupSuccess(is2faValue);
+                    log.debug("{} - [key:value格式] 解析到is_2fa_setup_success: {}", phoneId, is2faValue);
+                    break;
+                case "need_retention":
+                    // 支持 need_retention: 0/1/2（留存脚本 exitCode=8 会写入 2）
+                    Integer needRetention = parseNeedRetentionValue(value);
+                    accountRegister.setNeedRetention(needRetention);
+                    log.debug("{} - [key:value格式] 解析到need_retention: {}", phoneId, needRetention);
                     break;
             }
-            log.debug("{} - 解析到字段（key:value格式）: {} = {}", phoneId, key, value);
         }
         
-        // 尝试解析Python字典格式
-        Pattern pattern2 = Pattern.compile("['\"](email|password|username|nickname_behavior_result|authenticator_key|outlook_info|is_2fa_setup_success)['\"]\\s*:\\s*(?:['\"]([^'\"]+?)['\"]|(True|False|true|false|1|0|\\{\\}))", Pattern.MULTILINE | Pattern.DOTALL);
+        // 尝试解析Python字典格式（优化正则，支持包含特殊字符的密码）
+        // 注意：使用非贪婪匹配，但确保能匹配到完整的值（包括特殊字符如 # @ 等）
+        Pattern pattern2 = Pattern.compile("['\"](email|password|username|nickname_behavior_result|authenticator_key|outlook_info|is_2fa_setup_success|need_retention)['\"]\\s*:\\s*(?:['\"]([^'\"]*?)['\"]|(True|False|true|false|1|0|\\{\\}))", Pattern.MULTILINE | Pattern.DOTALL);
         Matcher matcher2 = pattern2.matcher(output);
         
         while (matcher2.find()) {
@@ -3393,50 +4022,83 @@ public class TtRegisterService {
             
             switch (key) {
                 case "email":
-                    if (accountRegister.getEmail() == null || !value.isEmpty()) {
-                        accountRegister.setEmail(value);
+                    // 只在字段为空时才设置，确保不被覆盖
+                    if (accountRegister.getEmail() == null || accountRegister.getEmail().isEmpty()) {
+                        if (!value.isEmpty()) {
+                            accountRegister.setEmail(value);
+                            log.info("{} - [字典格式] 解析到email: {}", phoneId, value);
+                        }
+                    } else {
+                        log.debug("{} - [字典格式] email已存在，跳过: 已有值={}, 新值={}", phoneId, accountRegister.getEmail(), value);
                     }
                     break;
                 case "password":
-                    if (accountRegister.getPassword() == null || !value.isEmpty()) {
-                        accountRegister.setPassword(value);
+                    // 只在字段为空时才设置，确保不被覆盖（这是关键修复）
+                    if (accountRegister.getPassword() == null || accountRegister.getPassword().isEmpty()) {
+                        if (!value.isEmpty()) {
+                            accountRegister.setPassword(value);
+                            log.info("{} - [字典格式] 解析到password: {}", phoneId, value);
+                        }
+                    } else {
+                        log.warn("{} - [字典格式] password已存在，跳过覆盖: 已有值={}, 新值={}", phoneId, accountRegister.getPassword(), value);
                     }
                     break;
                 case "username":
-                    if (accountRegister.getUsername() == null || !value.isEmpty()) {
-                        accountRegister.setUsername(value);
+                    if (accountRegister.getUsername() == null || accountRegister.getUsername().isEmpty()) {
+                        if (!value.isEmpty()) {
+                            accountRegister.setUsername(value);
+                            log.debug("{} - [字典格式] 解析到username: {}", phoneId, value);
+                        }
                     }
                     break;
                 case "nickname_behavior_result":
-                    if (accountRegister.getBehavior() == null || !value.isEmpty()) {
-                        accountRegister.setBehavior(value);
+                    if (accountRegister.getBehavior() == null || accountRegister.getBehavior().isEmpty()) {
+                        if (!value.isEmpty()) {
+                            accountRegister.setBehavior(value);
+                            log.debug("{} - [字典格式] 解析到nickname_behavior_result: {}", phoneId, value);
+                        }
                     }
                     break;
                 case "authenticator_key":
-                    if (accountRegister.getAuthenticatorKey() == null || !value.isEmpty()) {
-                        accountRegister.setAuthenticatorKey(value);
+                    if (accountRegister.getAuthenticatorKey() == null || accountRegister.getAuthenticatorKey().isEmpty()) {
+                        if (!value.isEmpty()) {
+                            accountRegister.setAuthenticatorKey(value);
+                            log.debug("{} - [字典格式] 解析到authenticator_key: {}", phoneId, value);
+                        }
                     }
                     break;
                 case "outlook_info":
                     if (value.equals("{}") || value.isEmpty()) {
-                        accountRegister.setOutlookInfo("{}");
+                        if (accountRegister.getOutlookInfo() == null || accountRegister.getOutlookInfo().isEmpty()) {
+                            accountRegister.setOutlookInfo("{}");
+                            log.debug("{} - [字典格式] 解析到outlook_info: {}", phoneId);
+                        }
                     } else if (accountRegister.getOutlookInfo() == null || accountRegister.getOutlookInfo().isEmpty()) {
                         accountRegister.setOutlookInfo(value);
+                        log.debug("{} - [字典格式] 解析到outlook_info", phoneId);
                     }
                     break;
                 case "is_2fa_setup_success":
-                    Boolean boolValue = parseBooleanValue(value);
-                    accountRegister.setIs2faSetupSuccess(boolValue);
+                    // 支持 true→1, false→0, DELAYED→2 三种值
+                    Integer is2faValue = parseIs2faSetupSuccessValue(value);
+                    accountRegister.setIs2faSetupSuccess(is2faValue);
+                    log.debug("{} - [字典格式] 解析到is_2fa_setup_success: {}", phoneId, is2faValue);
+                    break;
+                case "need_retention":
+                    // 支持 need_retention: 0/1/2（留存脚本 exitCode=8 会写入 2）
+                    Integer needRetention2 = parseNeedRetentionValue(value);
+                    accountRegister.setNeedRetention(needRetention2);
+                    log.debug("{} - [字典格式] 解析到need_retention: {}", phoneId, needRetention2);
                     break;
             }
-            log.debug("{} - 解析到字段（字典格式）: {} = {}", phoneId, key, value);
         }
         
         return foundAny;
     }
     
     /**
-     * 从outlook_info JSON中提取email和password等信息
+     * 从outlook_info JSON中提取email信息（仅提取email，不提取password）
+     * 注意：outlook_info中的password是Outlook邮箱密码，不是TikTok注册密码，所以不提取
      * 
      * @param accountRegister 账号注册对象
      */
@@ -3451,6 +4113,7 @@ public class TtRegisterService {
             // 1. JSON格式：{"email": "xxx", "password": "xxx", ...}
             // 2. Python字典格式：{'email': 'xxx', 'password': 'xxx', ...}
             // 3. 已经是标准JSON格式（从多行格式中提取的）
+            // 注意：outlook_info中的password是Outlook邮箱密码，不是TikTok注册密码
             
             String jsonStr = outlookInfoStr.trim();
             
@@ -3465,21 +4128,20 @@ public class TtRegisterService {
             @SuppressWarnings("unchecked")
             Map<String, Object> outlookInfoMap = objectMapper.readValue(jsonStr, Map.class);
             
-            // 从outlook_info中提取email和password（如果accountRegister中没有的话）
+            // 从outlook_info中提取email（如果accountRegister中没有的话）
+            // 注意：这是最后的后备方案，优先级最低
+            // 注意：不提取password，因为outlook_info中的password是Outlook邮箱密码，不是TikTok注册密码
             if (accountRegister.getEmail() == null || accountRegister.getEmail().isEmpty()) {
                 Object emailObj = outlookInfoMap.get("email");
                 if (emailObj != null) {
-                    accountRegister.setEmail(emailObj.toString());
-                    log.info("{} - 从outlook_info中提取到email: {}", accountRegister.getPhoneId(), accountRegister.getEmail());
+                    String emailFromOutlook = emailObj.toString();
+                    accountRegister.setEmail(emailFromOutlook);
+                    log.info("{} - [outlook_info提取] 从outlook_info中提取到email: {}", accountRegister.getPhoneId(), emailFromOutlook);
+                } else {
+                    log.debug("{} - [outlook_info提取] outlook_info中未找到email字段", accountRegister.getPhoneId());
                 }
-            }
-            
-            if (accountRegister.getPassword() == null || accountRegister.getPassword().isEmpty()) {
-                Object passwordObj = outlookInfoMap.get("password");
-                if (passwordObj != null) {
-                    accountRegister.setPassword(passwordObj.toString());
-                    log.info("{} - 从outlook_info中提取到password", accountRegister.getPhoneId());
-                }
+            } else {
+                log.debug("{} - [outlook_info提取] email已存在，跳过从outlook_info提取: {}", accountRegister.getPhoneId(), accountRegister.getEmail());
             }
             
         } catch (Exception e) {
@@ -3505,6 +4167,54 @@ public class TtRegisterService {
         } else if ("False".equalsIgnoreCase(trimmed) || "0".equals(trimmed)) {
             return false;
         }
+        return null;
+    }
+
+    /**
+     * 解析 need_retention 字段值
+     * 支持：
+     * 0/False/False-like => 0
+     * 1/True/True-like  => 1
+     * 2/2              => 2（留存脚本 exitCode=8 更新）
+     *
+     * @param value 原始字符串值
+     * @return 解析后的值（0/1/2），如果无法解析返回 null
+     */
+    private Integer parseNeedRetentionValue(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) return null;
+        if ("2".equals(trimmed)) return 2;
+        if ("True".equalsIgnoreCase(trimmed) || "1".equals(trimmed)) return 1;
+        if ("False".equalsIgnoreCase(trimmed) || "0".equals(trimmed)) return 0;
+        return null;
+    }
+    
+    /**
+     * 解析is_2fa_setup_success字段值
+     * 支持的值：true→1, false→0, DELAYED→2（兼容旧的 Skipped→2）
+     *
+     * @param value 原始字符串值
+     * @return 解析后的值（1=true, 0=false, 2=DELAYED），如果无法解析返回null
+     */
+    private Integer parseIs2faSetupSuccessValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        // 支持 true, True, TRUE, 1 → 返回 1
+        if ("True".equalsIgnoreCase(trimmed) || "1".equals(trimmed)) {
+            return 1;
+        }
+        // 支持 false, False, FALSE, 0 → 返回 0
+        if ("False".equalsIgnoreCase(trimmed) || "0".equals(trimmed)) {
+            return 0;
+        }
+        // 支持 DELAYED（新枚举）以及兼容旧的 Skipped → 返回 2
+        if ("DELAYED".equalsIgnoreCase(trimmed) || "Skipped".equalsIgnoreCase(trimmed)) {
+            return 2;
+        }
+        // 如果无法识别，返回null
         return null;
     }
     
@@ -3547,6 +4257,8 @@ public class TtRegisterService {
             // 设置IP地址
             failureRecord.setIp(context.getRealIp());
             failureRecord.setTiktokVersion(context.getTiktokVersion());
+            // 设置国家代码
+            failureRecord.setCountry(context.getCountry());
             
             // 设置固定字段
             failureRecord.setNurtureJsonSource("ResetPhoneEnv");
@@ -3566,6 +4278,42 @@ public class TtRegisterService {
             }
         } catch (Exception e) {
             log.error("{} - 保存注册失败记录时出错", phoneId, e);
+        }
+    }
+
+    /**
+     * 假邮箱脚本失败/超时场景下，尽量从输出中解析并落库 email/password。
+     * 解析成功返回 true；否则返回 false 由调用方走普通失败记录。
+     */
+    private boolean trySaveFailedFakeEmailRecord(String output, RegisterContext context) {
+        String phoneId = context.getPhoneId();
+        try {
+            if (output == null || output.trim().isEmpty()) {
+                return false;
+            }
+
+            TtAccountRegister record = parseRegisterOutput(output, context);
+            if (record == null) {
+                return false;
+            }
+
+            record.setRegisterSuccess(false); // 明确标记失败
+            record.setRegisterType("FAKE_EMAIL");
+            record.setCreatedAt(LocalDateTime.now());
+            record.setUpdatedAt(LocalDateTime.now());
+
+            int insertResult = ttAccountRegisterRepository.insert(record);
+            if (insertResult > 0) {
+                log.info("{} - 失败场景已保存假邮箱账号信息: email={}, username={}",
+                        phoneId, record.getEmail(), record.getUsername());
+                return true;
+            }
+
+            log.warn("{} - 失败场景保存假邮箱账号信息失败", phoneId);
+            return false;
+        } catch (Exception e) {
+            log.warn("{} - 失败场景解析/保存假邮箱账号信息异常: {}", phoneId, e.getMessage());
+            return false;
         }
     }
     
@@ -3602,13 +4350,65 @@ public class TtRegisterService {
     }
 
     /**
+     * 负载均衡选择 Appium 服务器
+     * 根据数据库中每台服务器的使用次数（PENDING + RUNNING 状态的任务数），选择使用最少的服务器
+     * 
+     * @return 选中的 Appium 服务器地址
+     */
+    private String selectAppiumServerWithLoadBalance() {
+        // 可用的 Appium 服务器列表
+        String[] appiumServers = {"10.13.55.85", "10.13.16.7", "10.13.58.129"};
+        
+        try {
+            // 统计每台服务器当前的使用次数（PENDING + RUNNING 状态的任务数）
+            Map<String, Integer> serverUsageCount = new HashMap<>();
+            
+            for (String server : appiumServers) {
+                // 查询该服务器上 PENDING 和 RUNNING 状态的任务数
+                LambdaQueryWrapper<TtRegisterTask> wrapper = new LambdaQueryWrapper<>();
+                wrapper.eq(TtRegisterTask::getAppiumServer, server)
+                       .in(TtRegisterTask::getStatus, Arrays.asList("PENDING", "RUNNING"));
+                Long countLong = ttRegisterTaskRepository.selectCount(wrapper);
+                int count = countLong != null ? countLong.intValue() : 0;
+                serverUsageCount.put(server, count);
+                log.debug("Appium 服务器 {} 当前使用次数: {}", server, count);
+            }
+            
+            // 选择使用次数最少的服务器
+            String selectedServer = appiumServers[0]; // 默认选择第一台
+            int minCount = serverUsageCount.getOrDefault(selectedServer, 0);
+            
+            for (String server : appiumServers) {
+                int count = serverUsageCount.getOrDefault(server, 0);
+                if (count < minCount) {
+                    minCount = count;
+                    selectedServer = server;
+                }
+            }
+            
+            log.info("负载均衡选择 Appium 服务器: {} (使用次数: {})", selectedServer, minCount);
+            return selectedServer;
+            
+        } catch (Exception e) {
+            log.error("负载均衡选择 Appium 服务器失败，使用默认服务器", e);
+            // 如果查询失败，使用第一台服务器作为默认值
+            return appiumServers[0];
+        }
+    }
+    
+    /**
      * 统一SSH命令执行
      */
     private SshUtil.SshResult sshCommand(String targetHost, String command) {
-        String username = "ubuntu";
-        // 如果目标主机是Appium服务器，使用root用户
-        if (targetHost.equals(mainboardAppiumServer)) {
-            username = "root";
+        // 根据目标主机判断使用哪个用户
+        // 10.13.55.85 / 10.13.16.7 / 10.13.58.129 是Appium脚本服务器，需要使用root用户
+        // 其他云手机服务器使用ubuntu用户
+        String username = "ubuntu"; // 默认使用ubuntu用户
+        if (targetHost != null && (
+                targetHost.equals("10.13.55.85") ||
+                targetHost.equals("10.13.16.7") ||
+                targetHost.equals("10.13.58.129"))) {
+            username = "root"; // Appium脚本服务器使用root用户
         }
         
         return SshUtil.executeCommandWithPrivateKey(
@@ -4002,6 +4802,86 @@ public class TtRegisterService {
             result.put("success", false);
             result.put("message", "重置任务状态失败: " + e.getMessage());
             return result;
+        }
+    }
+
+    /**
+     * 在宿主机上可选执行 /vdc/myq/cpi/change_after_reset.sh 脚本（如果存在）
+     * 参数：phone_id
+     */
+    private void runChangeAfterResetIfExists(String phoneId, String serverIp) {
+        try {
+            String scriptPath = "/vdc/myq/cpi/change_after_reset.sh";
+            // 先检查脚本是否存在且可执行
+            String checkCmd = String.format("[ -x %s ] && echo 'exists' || echo 'not_exists'", scriptPath);
+            SshUtil.SshResult checkResult = sshCommand(serverIp, checkCmd);
+            if (!checkResult.isSuccess()) {
+                log.warn("{} - 检查 change_after_reset.sh 是否存在时出错: {}", phoneId, checkResult.getErrorMessage());
+                return;
+            }
+            String checkOutput = checkResult.getOutput() != null ? checkResult.getOutput().trim() : "";
+            if (!"exists".equals(checkOutput)) {
+                log.info("{} - 宿主机 {} 上未找到可执行的 change_after_reset.sh，跳过执行", phoneId, serverIp);
+                return;
+            }
+
+            // 执行脚本：cd /vdc/myq/cpi && ./change_after_reset.sh phone_id
+            // 使用脚本自身的shebang与权限，行为与人为在终端执行一致
+            String execCmd = String.format("cd /vdc/myq/cpi && ./change_after_reset.sh %s", phoneId);
+            log.info("{} - 执行 change_after_reset.sh 脚本（与手动 ./change_after_reset.sh 一致）: {}", phoneId, execCmd);
+            SshUtil.SshResult execResult = sshCommand(serverIp, execCmd);
+            if (execResult.isSuccess()) {
+                log.info("{} - change_after_reset.sh 执行成功，输出: {}", phoneId, execResult.getOutput());
+            } else {
+                log.warn("{} - change_after_reset.sh 执行失败: {}, 输出: {}", 
+                        phoneId, execResult.getErrorMessage(), execResult.getOutput());
+            }
+        } catch (Exception e) {
+            log.error("{} - 执行 change_after_reset.sh 脚本异常", phoneId, e);
+        }
+    }
+
+    /**
+     * 针对 MX 国家，在宿主机上调整指定设备的 xray 动态代理配置为 gate1.ipweb.cc:7778，并重启 xray-${phoneId}
+     * - 配置文件路径：/home/ubuntu/xray/xray-conf/${phoneId}.json
+     * - 只更新 outbounds 中 tag=dynamic 的第一个 server
+     * - user 使用 B_59206_MX___60_<8位随机字符串>
+     */
+    private void adjustXrayDynamicForMx(String phoneId, String serverIp) {
+        try {
+            String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            StringBuilder sb = new StringBuilder();
+            ThreadLocalRandom random = ThreadLocalRandom.current();
+            for (int i = 0; i < 8; i++) {
+                sb.append(chars.charAt(random.nextInt(chars.length())));
+            }
+            String randSuffix = sb.toString();
+            String user = "B_59206_MX___60_" + randSuffix;
+
+            String confPath = "/home/ubuntu/xray/xray-conf/" + phoneId + ".json";
+            String cmd = String.format(
+                "conf='%s'; tmp=\"${conf}.tmp\"; " +
+                "if [ -f \"$conf\" ]; then " +
+                "  jq --arg addr 'gate1.ipweb.cc' --argjson port 7778 --arg user '%s' --arg pass 'Kim4567' " +
+                "    '(.outbounds[] | select(.tag==\"dynamic\") | .settings.servers[0].address) = $addr " +
+                "   | (.outbounds[] | select(.tag==\"dynamic\") | .settings.servers[0].port) = $port " +
+                "   | (.outbounds[] | select(.tag==\"dynamic\") | .settings.servers[0].users[0].user) = $user " +
+                "   | (.outbounds[] | select(.tag==\"dynamic\") | .settings.servers[0].users[0].pass) = $pass' " +
+                "    \"$conf\" > \"$tmp\" && mv \"$tmp\" \"$conf\" && sudo systemctl restart xray-%s; " +
+                "else echo 'xray conf not found for %s'; fi",
+                confPath, user, phoneId, phoneId
+            );
+
+            log.info("{} - 调整 MX 设备 xray 动态代理配置: {}", phoneId, cmd);
+            SshUtil.SshResult result = sshCommand(serverIp, cmd);
+            if (result.isSuccess()) {
+                log.info("{} - 调整 xray 动态代理并重启服务成功，输出: {}", phoneId, result.getOutput());
+            } else {
+                log.warn("{} - 调整 xray 动态代理或重启服务失败: {}, 输出: {}",
+                        phoneId, result.getErrorMessage(), result.getOutput());
+            }
+        } catch (Exception e) {
+            log.error("{} - 调整 MX 设备 xray 动态代理配置异常", phoneId, e);
         }
     }
 }

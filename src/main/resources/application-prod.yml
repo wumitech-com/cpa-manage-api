@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/tt?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://10.7.43.162:3306/tt?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: Wumitech
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -77,3 +77,7 @@ agent:
     IbfjLJOTdaC6Zpao1HhSRA6vsWOEzJ9Hlsxq2lM8QyfqG0Wk1aH9hAiknNPQ
     -----END RSA PRIVATE KEY-----
   ssh-public-key: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC8Fm9X8Zy0zUwlAm527zjNX8ZgHt2+IXgZ0WZ+upQsvnfJrjrZg/KOuSGteHShGDKuH+BKxijm3FUR6ScgNzETsfGbNwcmNJ7DRIEMudGhLKnTCsm0Yy2x81gM9jUhh0h5EXKRQ4Qc7MDcGD3hV86m0STRMWGi2CJllXP1CYUU9uLptE9cuIYxKrG8FczFFgrjTVT3SsRKPGPyblqAYdAaI28RPXNOog10ohgdL9D/TWjrWPydl0wgYqDRDy0WbY0oPGTo0VLwskpHBoMU8zGy5ynOOMd5hEs/5ZxemN14omWe22O3MWV4kw0kEiwk/d6e5ihptmQJSxSRHIxJdzcKuu+afS6mkFYH2U+FweEEGdhETvtCyYt/8N+Knb4XrQSMFdZ8hgajMZo78JxmylyZvpZRlkzrcafHUAViHBxo4iiZq7pEpGB45aCVxm8xWA4PVQ/CTEYnzVT133tgZmPIZsjqX5DzBnboX+jq2ntBBLgh+boicN+Rn16vsIBEvP/jaR+UhroQL/A7dQttNjqqoMMJWMSz5TJBV7GvrYEIDCexbLRedS8N6gyMGLWn5X2E4rEypkTUHtZEqkHGTUvO74KDr28rOUGRLu6RoUdjAkkddG7N3okBLk9zJUQSPxzBF/efyFEf52WgN93SpfYZWAz5qO7yQiadyrAEl0BXSQ== i-java-server@wumitech.com'
+
+# CPA API配置
+cpa-api:
+  base-url: "http://cpa-api:8080"  # CPA API基础URL（K8s内部服务地址）

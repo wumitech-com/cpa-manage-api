@@ -1,0 +1,2212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TT Farm Console - 批量养号控制中心</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <style>
+    :root {
+      --glass: rgba(255, 255, 255, 0.5);
+      --glass-border: rgba(255, 255, 255, 0.65);
+      --glass-hover: rgba(255, 255, 255, 0.6);
+      --text: #6b4c5a;
+      --text-muted: #a68a97;
+      --accent: #f9a8d4;
+      --accent-2: #fbcfe8;
+      --success: #86efac;
+      --warning: #fde047;
+      --error: #fda4af;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--text);
+      background: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(249, 168, 212, 0.25), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 50%, rgba(251, 207, 232, 0.3), transparent),
+        radial-gradient(ellipse 50% 50% at 0% 80%, rgba(254, 240, 248, 0.4), transparent),
+        linear-gradient(180deg, #fef7ff 0%, #fdf2f8 50%, #fce7f3 100%);
+    }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 240px; padding: 28px 0; flex-shrink: 0;
+      background: var(--glass); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border-right: 1px solid var(--glass-border);
+      border-radius: 0 24px 24px 0;
+    }
+    .logo {
+      position: relative;
+      display: flex; align-items: center; gap: 12px;
+      padding: 6px 24px 22px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.55);
+      overflow: hidden;
+    }
+    .logo::before{
+      content:'';
+      position:absolute;
+      left:-40px; top:-34px;
+      width: 220px; height: 120px;
+      background:
+        radial-gradient(closest-side at 35% 45%, rgba(249,168,212,0.35), transparent 70%),
+        radial-gradient(closest-side at 75% 25%, rgba(251,207,232,0.35), transparent 72%);
+      filter: blur(2px);
+      transform: rotate(-6deg);
+      pointer-events:none;
+    }
+    .logo::after{
+      content:'';
+      position:absolute;
+      left: 24px; right: 24px; bottom: 10px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(249,168,212,0.65), transparent);
+      opacity: 0.8;
+      pointer-events:none;
+    }
+    .logo-mark {
+      width: 34px; height: 34px; border-radius: 12px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(249,168,212,0.95), rgba(251,207,232,0.9));
+      box-shadow:
+        0 10px 26px rgba(249,168,212,0.22),
+        inset 0 0 0 1px rgba(255,255,255,0.75);
+      position: relative;
+      flex: 0 0 auto;
+      overflow: hidden;
+      animation: logoPulse 4s ease-in-out infinite;
+    }
+    .logo-mark::before{
+      content:'';
+      position:absolute;
+      inset: 4px;
+      border-radius: 10px;
+      background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.9), rgba(255,255,255,0.15) 55%, rgba(255,255,255,0.05) 100%);
+      opacity: 0.9;
+      pointer-events:none;
+    }
+    .logo-mark::after {
+      content: '♧';
+      position: relative;
+      z-index: 1;
+      font-size: 1.05rem;
+      color: rgba(107,39,71,0.9);
+      transform: translateY(-0.5px);
+      text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+    }
+    .brand-text{ display:flex; flex-direction:column; gap: 2px; min-width: 0; }
+    .brand-title{
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.22rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      background: linear-gradient(135deg, rgba(249,168,212,1), rgba(251,207,232,1));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-decoration: none;
+    }
+    .brand-title:hover { opacity: 0.88; }
+    .brand-sub{
+      font-size: 0.74rem;
+      color: rgba(166,138,151,0.95);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @keyframes logoPulse {
+      0%   { transform: translateY(0) scale(1); box-shadow: 0 10px 26px rgba(249,168,212,0.22), inset 0 0 0 1px rgba(255,255,255,0.75); }
+      40%  { transform: translateY(-1px) scale(1.04); box-shadow: 0 14px 30px rgba(249,168,212,0.30), inset 0 0 0 1px rgba(255,255,255,0.9); }
+      70%  { transform: translateY(0) scale(0.99); box-shadow: 0 8px 20px rgba(249,168,212,0.18), inset 0 0 0 1px rgba(255,255,255,0.75); }
+      100% { transform: translateY(0) scale(1); box-shadow: 0 10px 26px rgba(249,168,212,0.22), inset 0 0 0 1px rgba(255,255,255,0.75); }
+    }
+    .back-home {
+      display: block; padding: 10px 24px; margin: 2px 12px 14px;
+      font-size: 0.8rem; color: var(--text-muted); text-decoration: none;
+      border-radius: 12px; transition: all 0.25s ease;
+    }
+    .back-home:hover { color: var(--accent); background: rgba(249, 168, 212, 0.2); }
+    .back-home::before { content: '← '; }
+    .nav-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 24px; color: var(--text-muted); cursor: pointer;
+      transition: all 0.25s ease; margin: 0 12px; border-radius: 14px;
+    }
+    .nav-item:hover { color: var(--text); background: var(--glass-hover); }
+    .nav-item.active { color: var(--accent); background: rgba(249, 168, 212, 0.25); }
+    .nav-item .icon { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+    .nav-item.active .icon { opacity: 1; box-shadow: 0 0 12px currentColor; }
+    .nav-item .nav-emoji { font-size: 0.9em; opacity: 0.8; }
+    .main { flex: 1; padding: 32px; overflow-y: auto; position: relative; }
+    .page-view {
+      display: none;
+      animation: page-in 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    .page-view.active {
+      display: block;
+    }
+    .page-view.leaving {
+      animation: page-out 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes page-in {
+      from { opacity: 0; transform: translateY(12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes page-out {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(-8px) scale(0.99); }
+    }
+    .header { margin-bottom: 32px; }
+    .header h1 { font-family: 'Outfit', sans-serif; font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
+    .header .sub { font-size: 0.875rem; color: var(--text-muted); margin-top: 6px; }
+    .header .sub-emoji { font-size: 0.8rem; color: var(--accent); margin-top: 4px; font-style: italic; }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 28px; }
+    .stat-card {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px;
+      transition: all 0.3s ease;
+    }
+    .stat-card:hover {
+      background: var(--glass-hover); border-color: rgba(255, 255, 255, 0.75);
+      transform: translateY(-4px); box-shadow: 0 20px 40px rgba(249, 168, 212, 0.1);
+    }
+    .stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
+    .stat-card .label-emoji { font-size: 0.7rem; opacity: 0.7; }
+    .stat-card .value {
+      font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-card.green .value { color: #16a34a; -webkit-text-fill-color: #16a34a; }
+    .stat-card.orange .value { color: #ca8a04; -webkit-text-fill-color: #ca8a04; }
+    .stat-card.purple .value { color: #db2777; -webkit-text-fill-color: #db2777; }
+    .gauge-section {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; margin-bottom: 24px;
+    }
+    .gauge-section .section-title { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px; }
+    .gauge-row { display: flex; gap: 32px; flex-wrap: wrap; }
+    .gauge { flex: 1; min-width: 120px; text-align: center; }
+    .gauge-circle {
+      width: 72px; height: 72px; margin: 0 auto 10px; border-radius: 50%;
+      background: conic-gradient(var(--accent) calc(var(--p) * 1%), rgba(249, 168, 212, 0.3) calc(var(--p) * 1%));
+      display: flex; align-items: center; justify-content: center; padding: 4px;
+    }
+    .gauge-circle::after { content: ''; width: 56px; height: 56px; background: rgba(255, 255, 255, 0.9); border-radius: 50%; }
+    .gauge .label { font-size: 0.75rem; color: var(--text-muted); }
+    .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .panel {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; overflow: hidden;
+    }
+    .panel-header {
+      padding: 18px 24px; border-bottom: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.5);
+    }
+    .panel-title { font-family: 'Outfit', sans-serif; font-size: 0.95rem; font-weight: 600; }
+    .panel-body { padding: 0; max-height: 320px; overflow-y: auto; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .data-table th {
+      text-align: left; padding: 14px 20px; color: var(--text-muted); font-weight: 500;
+      font-size: 0.75rem; border-bottom: 1px solid var(--glass-border);
+    }
+    .data-table td { padding: 14px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.5); }
+    .data-table tr:hover td { background: rgba(255, 255, 255, 0.4); }
+    .status { display: inline-block; padding: 4px 10px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+    .status.running { background: rgba(134, 239, 172, 0.35); color: #16a34a; }
+    .status.completed { background: rgba(251, 207, 232, 0.4); color: #db2777; }
+    .status.pending { background: rgba(249, 168, 212, 0.3); color: var(--accent); }
+    .status.failed, .status.stopped { background: rgba(253, 164, 175, 0.35); color: var(--error); }
+    .status.success { background: rgba(134, 239, 172, 0.35); color: #16a34a; }
+    .panel-full { grid-column: 1 / -1; }
+    .time { color: var(--text-muted); font-size: 0.75rem; }
+    .panel-body::-webkit-scrollbar { width: 8px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: rgba(249, 168, 212, 0.4); border-radius: 4px; }
+    .page-single .panel { max-height: none; }
+    .page-single .panel-body { max-height: 480px; }
+    .main-footer {
+      margin-top: 40px; padding-top: 20px;
+      font-size: 0.75rem; color: var(--text-muted); opacity: 0.6;
+      text-align: center; border-top: 1px solid rgba(255,255,255,0.4);
+    }
+    .stat-card.loading .value { opacity: 0.5; }
+    .traffic-row { grid-template-columns: repeat(2, minmax(0,1fr)); margin-top: -4px; }
+    .trend-section {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; margin-bottom: 24px;
+    }
+    .trend-section .section-title { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px; }
+    .trend-legend { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+    .trend-legend span { font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .trend-legend .dot { width: 10px; height: 10px; border-radius: 4px; }
+    .trend-legend .dot-reg { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+    .trend-legend .dot-2fa { background: #16a34a; }
+    .trend-legend .dot-ret { background: #db2777; }
+    .trend-bars { display: flex; align-items: flex-end; gap: 8px; height: 140px; padding: 0 4px; position: relative; }
+    .trend-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+    .trend-day-bars { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 100px; width: 100%; }
+    .trend-day-bar {
+      flex: 1; min-width: 14px; max-width: 28px; min-height: 4px; border-radius: 6px 6px 0 0;
+      transition: height 0.4s ease; align-self: flex-end;
+    }
+    .trend-day-bar.reg { background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
+    .trend-day-bar.twofa { background: linear-gradient(180deg, #22c55e, #86efac); }
+    .trend-day-bar.ret { background: linear-gradient(180deg, #ec4899, #f9a8d4); }
+    .trend-day.today .trend-day-bar { box-shadow: 0 0 8px rgba(249,168,212,0.4); }
+    .trend-day .label { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
+    .trend-day .vals { font-size: 0.65rem; color: var(--text-muted); }
+    .small-list { font-size: 0.75rem; color: var(--text-muted); line-height: 1.45; display:flex; flex-direction:column; gap:8px; }
+    .small-list .item-row {
+      border: 1px solid rgba(249, 168, 212, 0.2);
+      background: rgba(255,255,255,0.72);
+      border-radius: 10px;
+      padding: 6px 8px;
+    }
+    .small-list .item-row .row-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:5px; }
+    .small-list .item-row .left { display:flex; align-items:center; gap:6px; min-width:0; }
+    .small-list .item-row .rank {
+      width: 18px; height: 18px; border-radius: 999px; display:inline-flex; align-items:center; justify-content:center;
+      font-size: 0.64rem; font-weight: 700; color: #fff;
+      background: linear-gradient(135deg, #fb7185, #f59e0b);
+      flex: 0 0 auto;
+    }
+    .small-list .item-row .name { font-weight: 600; color: var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .small-list .item-row .meta { text-align:right; font-size:0.7rem; color: var(--text-muted); white-space:nowrap; }
+    .small-list .item-row .bar {
+      width: 100%; height: 6px; border-radius: 999px; background: rgba(226,232,240,0.8); overflow: hidden;
+    }
+    .small-list .item-row .fill {
+      height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, #fb7185, #f472b6);
+      min-width: 2px;
+    }
+    /* 扇形图区域：避免图形与图例被压缩 */
+    [id$="-pie"] {
+      flex: 0 0 auto;
+      width: 140px;
+      height: 140px;
+      min-width: 140px;
+      min-height: 140px;
+      border-radius: 50%;
+    }
+    #block-android-pie, #block-behavior-pie, #block-tiktok-pie, #block-country-pie, #block-server-pie {
+      width: 150px;
+      height: 150px;
+      min-width: 150px;
+      min-height: 150px;
+    }
+    [id$="-legend"] {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .trend-tooltip {
+      position: absolute; z-index: 20; pointer-events: none;
+      background: rgba(255,255,255,0.9); border-radius: 10px;
+      padding: 8px 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      font-size: 0.7rem; color: var(--text);
+      transform: translate(-50%, -110%);
+      white-space: nowrap;
+    }
+    .vs-yesterday { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+    .vs-yesterday.up { color: #16a34a; }
+    .vs-yesterday.down { color: var(--error); }
+    .date-picker-wrap { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .date-picker-wrap label { font-size: 0.9rem; color: var(--text-muted); }
+    .date-picker-wrap .fp-input {
+      padding: 10px 16px; border-radius: 12px; border: 1px solid var(--glass-border);
+      background: var(--glass); color: var(--text); font-size: 0.9rem;
+      font-family: inherit; min-width: 140px; cursor: pointer;
+      backdrop-filter: blur(12px);
+    }
+    .date-picker-wrap .fp-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(249,168,212,0.2); }
+    .date-picker-wrap .fp-input::placeholder { color: var(--text-muted); }
+    .date-picker-wrap .btn-today { padding: 8px 16px; font-size: 0.8rem; border-radius: 10px;
+      border: 1px solid var(--glass-border); background: var(--glass); color: var(--text-muted);
+      cursor: pointer; transition: all 0.2s; }
+    .date-picker-wrap .btn-today:hover { background: rgba(249,168,212,0.2); color: var(--accent); }
+    /* 任务列表：表单&按钮更精致 */
+    .task-form {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 14px 14px;
+      align-items: end;
+    }
+    .task-field { position: relative; }
+    .task-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      margin: 0 0 6px 2px;
+      user-select: none;
+    }
+    .task-input {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.75);
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: var(--text);
+      font-size: 0.86rem;
+      font-family: inherit;
+      box-shadow: 0 10px 24px rgba(249,168,212,0.08);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      outline: none;
+    }
+    .task-input:hover { background: rgba(255,255,255,0.65); }
+    .task-input:focus {
+      border-color: rgba(249,168,212,0.95);
+      box-shadow: 0 0 0 3px rgba(249,168,212,0.18), 0 16px 34px rgba(249,168,212,0.14);
+      transform: translateY(-1px);
+    }
+    .task-input[readonly] {
+      background: rgba(255,255,255,0.42);
+      color: rgba(107,76,90,0.75);
+    }
+    .task-input::placeholder { color: rgba(166,138,151,0.85); }
+    .task-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+      grid-column: 5 / span 2;
+    }
+    .ui-btn {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.75);
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, background 0.18s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .ui-btn.primary {
+      background: linear-gradient(135deg, rgba(249,168,212,0.95), rgba(251,207,232,0.95));
+      color: #6b2747;
+      box-shadow: 0 18px 38px rgba(249,168,212,0.18);
+    }
+    .ui-btn.ghost {
+      background: rgba(255,255,255,0.55);
+      color: var(--text);
+      box-shadow: 0 14px 30px rgba(249,168,212,0.10);
+    }
+    .ui-btn:hover { transform: translateY(-1px); filter: brightness(1.03); }
+    .ui-btn:active { transform: translateY(0px) scale(0.99); }
+    .ui-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    @media (max-width: 1100px) {
+      .task-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .task-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    }
+    @media (max-width: 760px) {
+      .task-form { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    }
+    /* 今日注册：心跳 + 星星闪烁 */
+    .stat-card.heartbeat .value {
+      animation: heartbeat 1.4s ease-in-out infinite;
+      transform-origin: center;
+    }
+    @keyframes heartbeat {
+      0% { transform: scale(1); }
+      15% { transform: scale(1.06); }
+      30% { transform: scale(0.98); }
+      45% { transform: scale(1.03); }
+      60% { transform: scale(1); }
+      100% { transform: scale(1); }
+    }
+    .stat-card .label-emoji.star-twinkle {
+      position: relative;
+      display: inline-block;
+      animation: twinkle 1.8s ease-in-out infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 0.8; }
+      40% { transform: translateY(-1px) scale(1.08); opacity: 1; }
+      70% { transform: translateY(0) scale(0.96); opacity: 0.7; }
+    }
+    /* 封号率高时轻微报警光圈 */
+    .stat-card.alert .value {
+      position: relative;
+      color: #b91c1c;
+      -webkit-text-fill-color: #b91c1c;
+    }
+    .stat-card.alert .value::after {
+      content: '';
+      position: absolute;
+      inset: -6px -10px;
+      border-radius: 999px;
+      border: 1px solid rgba(248,113,113,0.7);
+      box-shadow: 0 0 0 0 rgba(248,113,113,0.55);
+      animation: alertPulse 1.8s ease-out infinite;
+      pointer-events: none;
+    }
+    @keyframes alertPulse {
+      0%   { opacity: 0.9; transform: scale(1); box-shadow: 0 0 0 0 rgba(248,113,113,0.55); }
+      70%  { opacity: 0; transform: scale(1.10); box-shadow: 0 0 0 10px rgba(248,113,113,0); }
+      100% { opacity: 0; transform: scale(1.10); box-shadow: none; }
+    }
+    /* 任务列表：RUNNING 行高亮 + 状态点点跳动 */
+    tr.task-running td {
+      background: rgba(190,242,255,0.18);
+      box-shadow: inset 0 0 0 1px rgba(56,189,248,0.35);
+    }
+    .status.running::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      margin-right: 6px;
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.8);
+      animation: statusPulse 1.6s ease-out infinite;
+    }
+    @keyframes statusPulse {
+      0%   { transform: scale(1);   box-shadow: 0 0 0 0 rgba(34,197,94,0.8); }
+      70%  { transform: scale(1.25);box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+      100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+    /* 留存信息页顶上的小爱心 */
+    .retention-hearts {
+      position: relative;
+      height: 0;
+      pointer-events: none;
+    }
+    .retention-hearts span {
+      position: absolute;
+      font-size: 1rem;
+      color: #f9739b;
+      animation: heartFloat 2.6s ease-in-out forwards;
+      opacity: 0;
+    }
+    @keyframes heartFloat {
+      0%   { transform: translateY(8px) scale(0.8); opacity: 0; }
+      20%  { opacity: 1; }
+      70%  { transform: translateY(-18px) scale(1.1); opacity: 0.9; }
+      100% { transform: translateY(-26px) scale(0.9); opacity: 0; }
+    }
+    /* Flatpickr 少女系主题 */
+    .flatpickr-calendar { background: var(--glass) !important; backdrop-filter: blur(20px); border: 1px solid var(--glass-border) !important; border-radius: 16px !important; box-shadow: 0 16px 48px rgba(249,168,212,0.15) !important; }
+    .flatpickr-months { background: transparent !important; }
+    .flatpickr-month { background: linear-gradient(135deg, rgba(249,168,212,0.2), rgba(251,207,232,0.15)) !important; color: var(--text) !important; fill: var(--text) !important; height: 40px !important; border-radius: 16px 16px 0 0 !important; }
+    .flatpickr-current-month { color: var(--text) !important; font-weight: 600 !important; }
+    .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--text-muted) !important; }
+    .flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill: var(--accent) !important; }
+    .flatpickr-weekdays { background: transparent !important; }
+    span.flatpickr-weekday { color: var(--text-muted) !important; font-size: 0.75rem !important; }
+    .flatpickr-day { color: var(--text) !important; border-radius: 10px !important; }
+    .flatpickr-day:hover { background: rgba(249,168,212,0.25) !important; border-color: transparent !important; }
+    .flatpickr-day.selected { background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important; border-color: transparent !important; color: #fff !important; }
+    .flatpickr-day.today { border-color: var(--accent) !important; color: var(--accent) !important; font-weight: 600 !important; }
+    .flatpickr-day.today:hover { background: rgba(249,168,212,0.3) !important; }
+    .flatpickr-day.flatpickr-disabled { color: var(--text-muted) !important; opacity: 0.5 !important; }
+    .flatpickr-months .flatpickr-month { border-radius: 16px 16px 0 0 !important; }
+    .flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { padding: 8px !important; }
+  </style>
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-mark"></span>
+        <div class="brand-text">
+          <a class="brand-title" href="index.html">TT Farm Console</a>
+          <div class="brand-sub">批量养号控制台</div>
+        </div>
+      </div>
+      <a href="index.html" class="back-home">返回首页</a>
+      <nav class="nav-item active" data-page="overview"><span class="icon"></span><span class="nav-emoji">🌸</span> 今日注册 ✨</nav>
+      <nav class="nav-item" data-page="block-rate"><span class="icon"></span><span class="nav-emoji">📊</span> 谁被封了 ♡</nav>
+      <nav class="nav-item" data-page="accounts"><span class="icon"></span><span class="nav-emoji">🪄</span> 任务列表</nav>
+      <nav class="nav-item" data-page="retention"><span class="icon"></span><span class="nav-emoji">📖</span> 留存信息</nav>
+    </aside>
+    <main class="main">
+      <!-- 总览 页面 -->
+      <div class="page-view active" id="page-overview">
+        <header class="header">
+          <h1>今日注册 ✨</h1>
+          <p class="sub">每日注册 · 一眼看穿所有小心思</p>
+          <p class="sub-emoji">今天也要加油呀～</p>
+        </header>
+        <div class="date-picker-wrap">
+          <label for="overview-date">查询日期：</label>
+          <input type="text" class="fp-input" id="overview-date" placeholder="选择日期" readonly />
+          <button type="button" class="btn-today" id="overview-btn-today">今天</button>
+          <span style="font-size:0.75rem;color:var(--text-muted);">选哪天就看那天的数据 + 前6天趋势～</span>
+        </div>
+        <div class="stats-row" id="overview-stats">
+          <div class="stat-card"><div class="label">今日注册数 <span class="label-emoji star-twinkle">✨</span></div><div class="value" id="stat-today-register">-</div><div class="vs-yesterday">当天入表总数</div></div>
+          <div class="stat-card"><div class="label">今日注册成功数 <span class="label-emoji">✅</span></div><div class="value" id="stat-today-register-success">-</div><div class="vs-yesterday">register_success=1</div></div>
+          <div class="stat-card green heartbeat"><div class="label">2FA 搞定啦 <span class="label-emoji star-twinkle">🔐</span></div><div class="value" id="stat-today-2fa">-</div><div class="vs-yesterday">is_2fa_setup_success=1</div></div>
+          <div class="stat-card purple"><div class="label">待留存做2FA <span class="label-emoji">💕</span></div><div class="value" id="stat-today-retention">-</div><div class="vs-yesterday">need_retention=1</div></div>
+          <div class="stat-card orange"><div class="label">今日注册成功率 <span class="label-emoji">📈</span></div><div class="value" id="stat-register-success-rate">-</div><div class="vs-yesterday">注册成功数 / 注册数</div></div>
+          <div class="stat-card orange"><div class="label">今日2FA设置成功率 <span class="label-emoji">🎯</span></div><div class="value" id="stat-twofa-setup-rate">-</div><div class="vs-yesterday">2FA成功数 / 注册成功数</div></div>
+        </div>
+        <div class="stats-row" style="justify-content:flex-end;gap:12px;">
+          <div class="panel" style="width:320px;">
+            <div class="panel-header"><span class="panel-title">注册成功率占比图</span></div>
+            <div class="panel-body" style="display:flex;align-items:center;gap:12px;">
+              <div id="register-success-rate-pie" style="width:120px;height:120px;border-radius:50%;background:conic-gradient(#fb7185 0 0%, #e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+              <div id="register-success-rate-pie-label" style="font-size:0.82rem;color:var(--text-muted);line-height:1.7;">成功 0%<br>未成功 100%</div>
+            </div>
+          </div>
+          <div class="panel" style="width:320px;">
+            <div class="panel-header"><span class="panel-title">2FA设置成功率占比图</span></div>
+            <div class="panel-body" style="display:flex;align-items:center;gap:12px;">
+              <div id="twofa-setup-rate-pie" style="width:120px;height:120px;border-radius:50%;background:conic-gradient(#6366f1 0 0%, #e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+              <div id="twofa-setup-rate-pie-label" style="font-size:0.82rem;color:var(--text-muted);line-height:1.7;">成功 0%<br>未成功 100%</div>
+            </div>
+          </div>
+        </div>
+        <div class="stats-row traffic-row" id="traffic-stats">
+          <div class="stat-card">
+            <div class="label">今日流量消耗 <span class="label-emoji">💾</span></div>
+            <div class="value" id="traffic-total">-</div>
+            <div class="vs-yesterday">来自成功 2FA 账号的 trafficData（GB）</div>
+          </div>
+          <div class="stat-card orange">
+            <div class="label">单个成功平均流量 <span class="label-emoji">⚡</span></div>
+            <div class="value" id="traffic-avg">-</div>
+            <div class="vs-yesterday">总流量 / 2FA 成功数（GB）</div>
+          </div>
+        </div>
+        <div class="trend-section">
+          <div class="section-title">七日心动曲线 · 牵手 / 2FA / 留存 ♡</div>
+          <div class="trend-legend">
+            <span><i class="dot dot-reg"></i>牵手</span>
+            <span><i class="dot dot-2fa"></i>2FA</span>
+            <span><i class="dot dot-ret"></i>留存</span>
+          </div>
+          <div class="trend-bars" id="trend-bars"></div>
+        </div>
+
+        <div class="trend-section">
+          <div class="section-title">七日流量曲线 · 成本趋势 ♡</div>
+          <div class="trend-legend">
+            <span><i class="dot dot-reg"></i>总流量（GB）</span>
+            <span><i class="dot dot-ret"></i>单个平均（GB）</span>
+          </div>
+          <div class="trend-bars" id="traffic-trend-bars"></div>
+        </div>
+
+        <div class="panel panel-full" id="twofa-detail-panel" style="margin-top:20px;">
+          <div class="panel-header"><span class="panel-title">今天 2FA 成功 · 详情 ♡</span></div>
+          <div class="panel-body" style="display:grid;grid-template-columns:repeat(5, minmax(220px, 1fr));gap:12px;overflow-x:auto;">
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">安卓版本分布</span></div>
+              <div class="panel-body small-list" id="twofa-android-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">行为 (nickname_behavior)</span></div>
+              <div class="panel-body small-list" id="twofa-behavior-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">TikTok 版本分布</span></div>
+              <div class="panel-body small-list" id="twofa-tiktok-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">国家分布</span></div>
+              <div class="panel-body small-list" id="twofa-country-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">服务器分布</span></div>
+              <div class="panel-body small-list" id="twofa-server-ip-list"></div>
+            </div>
+          </div>
+          <div class="panel-body" style="border-top:1px dashed rgba(255,255,255,0.6);margin-top:12px;padding:12px 20px;display:grid;grid-template-columns:repeat(5, minmax(300px, 1fr));gap:12px;overflow-x:auto;">
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">安卓版本占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="twofa-android-pie" style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+                <div id="twofa-android-legend" style="flex:1;font-size:0.78rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">行为占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="twofa-behavior-pie" style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+                <div id="twofa-behavior-legend" style="flex:1;font-size:0.78rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">TikTok 版本占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="twofa-tiktok-pie" style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+                <div id="twofa-tiktok-legend" style="flex:1;font-size:0.78rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">国家占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="twofa-country-pie" style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+                <div id="twofa-country-legend" style="flex:1;font-size:0.78rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">服务器占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="twofa-server-pie" style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 14px rgba(255,255,255,0.85);"></div>
+                <div id="twofa-server-legend" style="flex:1;font-size:0.78rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel-body" style="border-top:1px dashed rgba(255,255,255,0.6);margin-top:12px;padding:12px 20px;display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;color:var(--text-muted);">
+            <span>说明：流量来自注册脚本成功后调用 GetTrafficData 返回的 trafficData，页面按 GB 展示。</span>
+          </div>
+          <div class="panel-body" style="border-top:1px dashed rgba(255,255,255,0.6);margin-top:8px;padding:12px 20px;">
+            <div class="panel-header" style="padding:0 0 8px 0;border:none;background:transparent;">
+              <span class="panel-title">服务器详情 · 每小时 2FA 成功数</span>
+            </div>
+            <div id="twofa-server-hourly-list" style="display:flex;flex-direction:column;gap:8px;font-size:0.78rem;color:var(--text-muted);">
+              <div>暂无数据</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 封号率统计 页面 -->
+      <div class="page-view" id="page-block-rate">
+        <header class="header">
+          <h1>谁被封了 ♡</h1>
+          <p class="sub">2FA 设置成功当天为基准日，block_time 不为空 = 被封</p>
+          <p class="sub-emoji">看看哪些小可爱被风控了～</p>
+        </header>
+        <div class="date-picker-wrap">
+          <label for="block-rate-date">查询日期：</label>
+          <input type="text" class="fp-input" id="block-rate-date" placeholder="选择日期" readonly />
+          <button type="button" class="btn-today" id="block-rate-btn-today">今天</button>
+          <span style="font-size:0.75rem;color:var(--text-muted);">选哪天就看那天的次日/3天/7天封号率～</span>
+        </div>
+        <div class="stats-row" id="block-rate-stats">
+          <div class="stat-card green"><div class="label">次日封号率 <span class="label-emoji">📅</span></div><div class="value" id="block-next-day-rate">-</div><div class="vs-yesterday" id="block-next-day-detail">昨日2FA成功</div></div>
+          <div class="stat-card orange"><div class="label">3天封号率 <span class="label-emoji">📆</span></div><div class="value" id="block-three-day-rate">-</div><div class="vs-yesterday" id="block-three-day-detail">3天前2FA成功</div></div>
+          <div class="stat-card purple"><div class="label">7天封号率 <span class="label-emoji">📊</span></div><div class="value" id="block-seven-day-rate">-</div><div class="vs-yesterday" id="block-seven-day-detail">7天前2FA成功</div></div>
+        </div>
+        <div class="panel panel-full" style="margin-top:20px;">
+          <div class="panel-header">
+            <span class="panel-title">封号分布详情</span>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+              <button type="button" class="ui-btn ghost" id="btn-block-next-day">次日</button>
+              <button type="button" class="ui-btn ghost" id="btn-block-three-day">3天</button>
+              <button type="button" class="ui-btn ghost" id="btn-block-seven-day">7天</button>
+            </div>
+          </div>
+          <div class="panel-body" style="padding:10px 20px 0 20px;">
+            <div id="block-period-summary" style="display:inline-flex;align-items:center;gap:10px;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,0.75);border:1px solid rgba(249,168,212,0.25);font-size:0.78rem;color:var(--text-muted);">
+              <span id="block-period-label" style="font-weight:700;color:var(--text);">次日</span>
+              <span>封号 <b id="block-period-blocked" style="color:var(--error);">0</b></span>
+              <span>/</span>
+              <span>2FA成功数 <b id="block-period-total" style="color:var(--text);">0</b></span>
+              <span>·</span>
+              <span>封号率 <b id="block-period-rate" style="color:var(--accent);">0%</b></span>
+            </div>
+          </div>
+          <div class="panel-body" style="display:grid;grid-template-columns:repeat(5, minmax(0, 1fr));gap:12px;align-items:stretch;">
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">安卓版本分布</span></div>
+              <div class="panel-body small-list" id="block-android-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">行为 (nickname_behavior)</span></div>
+              <div class="panel-body small-list" id="block-behavior-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">TikTok 版本分布</span></div>
+              <div class="panel-body small-list" id="block-tiktok-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">国家分布</span></div>
+              <div class="panel-body small-list" id="block-country-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">服务器分布</span></div>
+              <div class="panel-body small-list" id="block-server-ip-list"></div>
+            </div>
+          </div>
+          <div class="panel-body" style="padding-top:0;display:grid;grid-template-columns:repeat(5, minmax(0, 1fr));gap:12px;align-items:stretch;">
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">对应封号率 · 安卓版本</span></div>
+              <div class="panel-body small-list" id="block-rate-android-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">对应封号率 · 行为</span></div>
+              <div class="panel-body small-list" id="block-rate-behavior-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">对应封号率 · TikTok版本</span></div>
+              <div class="panel-body small-list" id="block-rate-tiktok-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">对应封号率 · 国家</span></div>
+              <div class="panel-body small-list" id="block-rate-country-list"></div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">对应封号率 · 服务器</span></div>
+              <div class="panel-body small-list" id="block-rate-server-ip-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel panel-full" style="margin-top:16px;">
+          <div class="panel-header"><span class="panel-title">封号风险聚焦 · 扇形图</span></div>
+          <div class="panel-body" style="display:grid;grid-template-columns:repeat(5, minmax(320px, 1fr));gap:12px;overflow-x:auto;">
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">安卓版本封号占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="block-android-pie" style="width:150px;height:150px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 16px rgba(255,255,255,0.85);"></div>
+                <div id="block-android-legend" style="flex:1;font-size:0.8rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">行为封号占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="block-behavior-pie" style="width:150px;height:150px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 16px rgba(255,255,255,0.85);"></div>
+                <div id="block-behavior-legend" style="flex:1;font-size:0.8rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">TikTok 版本封号占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="block-tiktok-pie" style="width:150px;height:150px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 16px rgba(255,255,255,0.85);"></div>
+                <div id="block-tiktok-legend" style="flex:1;font-size:0.8rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">国家封号占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="block-country-pie" style="width:150px;height:150px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 16px rgba(255,255,255,0.85);"></div>
+                <div id="block-country-legend" style="flex:1;font-size:0.8rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+            <div class="panel" style="min-width:0;">
+              <div class="panel-header"><span class="panel-title">服务器封号占比</span></div>
+              <div class="panel-body" style="display:flex;gap:14px;align-items:center;">
+                <div id="block-server-pie" style="width:150px;height:150px;border-radius:50%;background:conic-gradient(#e5e7eb 0 100%);box-shadow:inset 0 0 0 16px rgba(255,255,255,0.85);"></div>
+                <div id="block-server-legend" style="flex:1;font-size:0.8rem;color:var(--text-muted);line-height:1.6;">暂无数据</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="trend-section" style="margin-top: 20px;">
+          <div class="section-title">最近7天封号率 · 只看每天那批2FA账号当前被封比例</div>
+          <div class="trend-legend">
+            <span><i class="dot dot-2fa"></i>封号率（%）</span>
+          </div>
+          <div class="trend-bars" id="block-rate-trend-bars"></div>
+        </div>
+        <div class="panel" style="margin-top:24px;">
+          <div class="panel-header"><span class="panel-title">说明 ♡</span></div>
+          <div class="panel-body" style="padding:20px;max-height:none;">
+            <p id="block-rate-desc" style="font-size:0.85rem;color:var(--text-muted);line-height:1.7;">
+              • <strong>次日封号率</strong>：昨日（<span id="desc-date-1"></span>）2FA 设置成功的账号，至今 block_time 不为空的比例<br>
+              • <strong>3天封号率</strong>：3天前（<span id="desc-date-3"></span>）2FA 设置成功的账号，至今 block_time 不为空的比例<br>
+              • <strong>7天封号率</strong>：7天前（<span id="desc-date-7"></span>）2FA 设置成功的账号，至今 block_time 不为空的比例
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 任务列表 页面 -->
+      <div class="page-view" id="page-accounts">
+        <header class="header">
+          <h1>任务列表 ♡</h1>
+          <p class="sub">所有小任务的休息与复活基地</p>
+          <p class="sub-emoji">想停就停，想改就改，再次出发～</p>
+        </header>
+        <div class="content-grid page-single">
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header">
+              <span class="panel-title">当前任务列表 ♡</span>
+              <div class="panel-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:0.78rem;">
+                <span>每页</span>
+                <select id="task-page-size" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
+                  <option value="10">10</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                </select>
+                <span>条</span>
+                <button type="button" id="task-query-btn" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">查询</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <table class="data-table" id="task-table">
+                <thead>
+                  <tr>
+                    <th>任务ID</th>
+                    <th>状态</th>
+                    <th>Server IP</th>
+                    <th>设备ID</th>
+                    <th>成功/失败</th>
+                    <th>开始时间</th>
+                    <th>结束时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="task-table-body">
+                  <tr><td colspan="8" style="text-align:center;color:var(--text-muted);">正在加载任务列表…</td></tr>
+                </tbody>
+              </table>
+              <div id="task-pagination" style="margin-top:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:0.78rem;color:var(--text-muted);">
+                <button type="button" id="task-prev" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">上一页</button>
+                <span id="task-page-info">第 1 / 1 页</span>
+                <button type="button" id="task-next" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">下一页</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header"><span class="panel-title">任务配置编辑 · 停一下，改一改再继续 ♡</span></div>
+            <div class="panel-body" style="padding:16px 20px;max-height:none;">
+              <form id="task-edit-form" class="task-form">
+                <div class="task-field" style="grid-column: span 2;">
+                  <label class="task-label">任务ID</label>
+                  <input type="text" id="edit-task-id" class="task-input" readonly placeholder="点击上面的任务自动带入" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">国家 (country)</label>
+                  <input type="text" id="edit-country" class="task-input" placeholder="如 US / BR" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">SDK 版本 (sdk)</label>
+                  <input type="text" id="edit-sdk" class="task-input" placeholder="如 33" />
+                </div>
+                <div class="task-field" style="grid-column: span 2;">
+                  <label class="task-label">镜像路径 (imagePath)</label>
+                  <input type="text" id="edit-image-path" class="task-input" placeholder="uhub...android13_xxx" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">GAID 标签 (gaidTag)</label>
+                  <input type="text" id="edit-gaid-tag" class="task-input" placeholder="如 20250410" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">动态IP渠道 (dynamicIpChannel)</label>
+                  <input type="text" id="edit-dynamic-ip" class="task-input" placeholder="如 closeli" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">静态IP渠道 (staticIpChannel)</label>
+                  <input type="text" id="edit-static-ip" class="task-input" placeholder="可选" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">目标数量 (targetCount)</label>
+                  <input type="number" id="edit-target-count" class="task-input" placeholder="0=无限" />
+                </div>
+                <div class="task-field" style="grid-column: span 2;">
+                  <label class="task-label">业务标识 (biz)</label>
+                  <input type="text" id="edit-biz" class="task-input" placeholder="可选备注" />
+                </div>
+                <div class="task-actions">
+                  <button type="button" id="btn-task-save" class="ui-btn primary">保存修改</button>
+                  <button type="button" id="btn-task-resume" class="ui-btn ghost">恢复执行</button>
+                </div>
+                <div id="task-edit-tip" style="grid-column:1 / -1;font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                  小提示：先在上面点「停止」，再改配置，最后点「恢复执行」，任务会以新配置重新排队。
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 留存记录 页面 -->
+      <div class="page-view" id="page-retention">
+        <header class="header">
+          <h1>留存信息 ♡</h1>
+          <p class="sub">记录每一次“别走呀”的小心动</p>
+          <p class="sub-emoji">今天哪些小可爱被留住了，哪些溜走了～</p>
+        </header>
+        <div class="date-picker-wrap">
+          <label for="retention-date">查询日期：</label>
+          <input type="text" class="fp-input" id="retention-date" placeholder="选择日期" readonly />
+          <button type="button" class="btn-today" id="retention-btn-today">今天</button>
+          <span style="font-size:0.75rem;color:var(--text-muted);">看某一天的留存执行情况～</span>
+        </div>
+        <div class="content-grid page-single">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">今日留存小结 ♡</span></div>
+            <div class="panel-body" style="padding:18px 22px;max-height:none;">
+              <div class="retention-hearts" id="ret-hearts"></div>
+              <div style="display:flex;flex-wrap:wrap;gap:18px;font-size:0.85rem;color:var(--text-muted);">
+                <div>总执行：<span id="ret-total">-</span></div>
+                <div>脚本成功：<span id="ret-script-ok">-</span></div>
+                <div>脚本成功率：<span id="ret-success-rate">-</span></div>
+                <div>备份成功：<span id="ret-backup-ok">-</span></div>
+                <div>备份成功率：<span id="ret-backup-rate">-</span></div>
+                <div>留存完成并2FA成功：<span id="ret-2fa-success">-</span></div>
+                <div>留存账号登出：<span id="ret-logout">-</span></div>
+                <div>当日留存成功 Cohort：<span id="ret-cohort-total">-</span> 个，其中封号 <span id="ret-cohort-blocked">-</span> 个（<span id="ret-cohort-rate">-</span>），登出 <span id="ret-cohort-logout">-</span> 个</div>
+                <div>全部留存成功 Cohort：<span id="ret-all-cohort-total">-</span> 个，其中封号 <span id="ret-all-cohort-blocked">-</span> 个（<span id="ret-all-cohort-rate">-</span>），登出 <span id="ret-all-cohort-logout">-</span> 个</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel panel-full">
+            <div class="panel-header">
+              <span class="panel-title">tt_retention_record · 留存执行记录 ♡</span>
+              <div class="panel-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:0.78rem;">
+                <span>每页</span>
+                <select id="ret-page-size" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
+                  <option value="10">10</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                </select>
+                <span>条</span>
+                <button type="button" id="ret-query-btn" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">查询</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <table class="data-table" id="ret-table">
+                <thead><tr><th>任务ID</th><th>设备</th><th>账号ID</th><th>GAID</th><th>脚本执行</th><th>备份</th><th>执行时间</th></tr></thead>
+                <tbody id="ret-tbody">
+                  <tr><td colspan="7" style="text-align:center;color:var(--text-muted);">请选择日期查询留存记录～</td></tr>
+                </tbody>
+              </table>
+              <div id="ret-pagination" style="margin-top:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:0.78rem;color:var(--text-muted);">
+                <button type="button" id="ret-prev" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">上一页</button>
+                <span id="ret-page-info">第 1 / 1 页</span>
+                <button type="button" id="ret-next" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="main-footer">Made with ♡ · 今天也要加油呀</p>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/zh.js"></script>
+  <script>
+    (function() {
+      var navItems = document.querySelectorAll('.nav-item[data-page]');
+      var pages = document.querySelectorAll('.page-view');
+      var currentPage = 'overview';
+
+      function switchPage(pageId) {
+        if (pageId === currentPage) return;
+        var targetPage = document.getElementById('page-' + pageId);
+        var currentPageEl = document.getElementById('page-' + currentPage);
+        if (!targetPage || !currentPageEl) return;
+
+        currentPageEl.classList.add('leaving');
+        setTimeout(function() {
+          currentPageEl.classList.remove('active', 'leaving');
+          targetPage.classList.add('active');
+          currentPage = pageId;
+
+          navItems.forEach(function(nav) {
+            nav.classList.toggle('active', nav.getAttribute('data-page') === pageId);
+          });
+        }, 350);
+      }
+
+      navItems.forEach(function(nav) {
+        nav.addEventListener('click', function() {
+          var page = this.getAttribute('data-page');
+          if (page) switchPage(page);
+        });
+      });
+    })();
+
+    // 加载每日注册统计
+    (function() {
+      var trendBars = document.getElementById('trend-bars');
+      var trafficBars = document.getElementById('traffic-trend-bars');
+      var dateInput = document.getElementById('overview-date');
+      var forceMockPage = /(?:\?|&)mock=1(?:&|$)/.test(location.search || '');
+      var MOCK_TWOFA_DETAIL = {
+        androidVersionDist: [
+          { value: '14', count: 926, percent: 50.14 },
+          { value: '13', count: 911, percent: 49.32 },
+          { value: '30', count: 10, percent: 0.54 }
+        ],
+        behaviorDist: [
+          { value: 'normal', count: 1023, percent: 55.39 },
+          { value: 'skip', count: 824, percent: 44.61 }
+        ],
+        tiktokVersionDist: [
+          { value: '43.9.3', count: 1120, percent: 60.64 },
+          { value: '43.1.15', count: 225, percent: 12.18 },
+          { value: '43.6.3', count: 197, percent: 10.67 },
+          { value: '43.1.4', count: 175, percent: 9.47 },
+          { value: '43.1.1', count: 130, percent: 7.04 }
+        ],
+        countryDist: [
+          { value: 'US', count: 1807, percent: 97.83 },
+          { value: 'BR', count: 40, percent: 2.17 }
+        ],
+        phoneServerIpDist: [
+          { value: '10.7.117.117', count: 337, percent: 18.25 },
+          { value: '10.7.169.151', count: 326, percent: 17.65 },
+          { value: '10.7.59.169', count: 321, percent: 17.38 },
+          { value: '10.7.136.129', count: 274, percent: 14.83 },
+          { value: '10.7.8.64', count: 268, percent: 14.51 },
+          { value: '10.7.184.117', count: 238, percent: 12.89 },
+          { value: '10.13.151.168', count: 73, percent: 3.95 },
+          { value: '10.13.161.137', count: 10, percent: 0.54 }
+        ],
+        trafficTotal: 44031584401,
+        trafficAvgPerSuccess: 23839515.11,
+        serverHourly2fa: [
+          {
+            serverIp: '10.7.117.117',
+            total: 337,
+            hourly: [
+              { hour: '08', count: 22 }, { hour: '09', count: 35 }, { hour: '10', count: 41 },
+              { hour: '11', count: 29 }, { hour: '12', count: 24 }, { hour: '13', count: 31 }
+            ]
+          },
+          {
+            serverIp: '10.7.169.151',
+            total: 326,
+            hourly: [
+              { hour: '08', count: 18 }, { hour: '09', count: 32 }, { hour: '10', count: 37 },
+              { hour: '11', count: 30 }, { hour: '12', count: 28 }, { hour: '13', count: 26 }
+            ]
+          }
+        ]
+      };
+      function buildMockOverviewData(dateStr) {
+        var d = dateStr || toYmd(new Date());
+        return {
+          todayRegister: 2579,
+          todayRegisterSuccess: 2016,
+          today2faSuccess: 1847,
+          todayNeedRetention: 935,
+          todayRegisterSuccessRate: 78.17,
+          today2faSetupSuccessRate: 91.62,
+          dailyTrend: [
+            { date: d, label: '今天', register: 2579, twofa: 1847, retention: 935, trafficTotal: 44031584401, trafficAvg: 23839515.11 },
+            { date: d, label: '昨天', register: 2488, twofa: 1765, retention: 902, trafficTotal: 41800311220, trafficAvg: 23682924.49 },
+            { date: d, label: '3/16', register: 2396, twofa: 1698, retention: 876, trafficTotal: 40129004110, trafficAvg: 23633099.00 },
+            { date: d, label: '3/15', register: 2318, twofa: 1630, retention: 841, trafficTotal: 38695410400, trafficAvg: 23739515.58 },
+            { date: d, label: '3/14', register: 2280, twofa: 1588, retention: 803, trafficTotal: 37261033000, trafficAvg: 23464126.83 },
+            { date: d, label: '3/13', register: 2212, twofa: 1522, retention: 775, trafficTotal: 35810021000, trafficAvg: 23528266.75 },
+            { date: d, label: '3/12', register: 2169, twofa: 1480, retention: 744, trafficTotal: 34370019000, trafficAvg: 23222985.81 }
+          ],
+          twofaDetail: Object.assign({}, MOCK_TWOFA_DETAIL)
+        };
+      }
+      if (!trendBars) return;
+
+      function toYmd(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function fmtNum(n) { return String(n == null ? 0 : n); }
+      function renderDist(list, elId) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        list = list || [];
+        if (!list.length) {
+          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
+          return;
+        }
+        el.innerHTML = list.map(function(item, idx) {
+          var name = item.value || '未知';
+          var count = item.count || 0;
+          var pct = item.percent != null ? Number(item.percent) : 0;
+          if (pct < 0) pct = 0;
+          if (pct > 100) pct = 100;
+          return '<div class="item-row">' +
+            '<div class="row-head">' +
+            '<div class="left"><span class="rank">' + (idx + 1) + '</span><span class="name" title="' + name + '">' + name + '</span></div>' +
+            '<span class="meta">' + count + ' · ' + pct + '%</span>' +
+            '</div>' +
+            '<div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
+            '</div>';
+        }).join('');
+      }
+      function renderRateDist(list, elId) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        list = list || [];
+        if (!list.length) {
+          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
+          return;
+        }
+        el.innerHTML = list.map(function(item, idx) {
+          var name = item.value || '未知';
+          var blocked = item.count || 0;
+          var total = item.totalCount || 0;
+          var rate = item.percent != null ? Number(item.percent) : 0;
+          if (rate < 0) rate = 0;
+          if (rate > 100) rate = 100;
+          return '<div class="item-row">' +
+            '<div class="row-head">' +
+            '<div class="left"><span class="rank">' + (idx + 1) + '</span><span class="name" title="' + name + '">' + name + '</span></div>' +
+            '<span class="meta">' + blocked + '/' + total + ' · ' + rate + '%</span>' +
+            '</div>' +
+            '<div class="bar"><div class="fill" style="width:' + rate + '%"></div></div>' +
+            '</div>';
+        }).join('');
+      }
+      function renderMissingRateHint(elId) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        el.innerHTML = '<div style="color:var(--text-muted);">后端未返回对应封号率字段，请升级后端版本</div>';
+      }
+      function renderPieFromDist(list, pieId, legendId) {
+        var pieEl = document.getElementById(pieId);
+        var legendEl = document.getElementById(legendId);
+        if (!pieEl || !legendEl) return;
+        list = list || [];
+        if (!list.length) {
+          pieEl.style.background = 'conic-gradient(#e5e7eb 0 100%)';
+          pieEl.innerHTML = '';
+          legendEl.innerHTML = '<div style="opacity:.8;">暂无数据</div>';
+          return;
+        }
+        var palette = ['#fb7185', '#f59e0b', '#10b981', '#6366f1', '#06b6d4', '#a855f7', '#f43f5e', '#84cc16'];
+        var top = list.slice(0, 6);
+        var start = 0;
+        var segs = [];
+        var legend = [];
+        top.forEach(function(item, i) {
+          var p = item.percent != null ? Number(item.percent) : 0;
+          var end = Math.min(100, start + p);
+          var color = palette[i % palette.length];
+          segs.push(color + ' ' + start + '% ' + end + '%');
+          var name = item.value || '未知';
+          var cnt = item.count || 0;
+          legend.push(
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;">' +
+              '<div style="display:flex;align-items:center;gap:6px;min-width:0;">' +
+                '<span style="width:16px;height:16px;border-radius:999px;background:' + color + ';color:#fff;font-size:0.62rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">' + (i + 1) + '</span>' +
+                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">' + name + '</span>' +
+              '</div>' +
+              '<span style="white-space:nowrap;color:var(--text-muted);font-size:0.72rem;">' + cnt + ' · ' + p + '%</span>' +
+            '</div>'
+          );
+          start = end;
+        });
+        if (start < 100) {
+          segs.push('#e5e7eb ' + start + '% 100%');
+        }
+        pieEl.style.background = 'conic-gradient(' + segs.join(',') + ')';
+        pieEl.innerHTML = '';
+        legendEl.innerHTML = legend.join('');
+      }
+      function fmtGb(bytesVal) {
+        var n = Number(bytesVal);
+        if (!isFinite(n) || n <= 0) return '0 GB';
+        var gb = n / (1024 * 1024 * 1024);
+        return (Math.round(gb * 100) / 100) + ' GB';
+      }
+      function renderRatePie(percent, pieId, labelId, color) {
+        var pieEl = document.getElementById(pieId);
+        var labelEl = document.getElementById(labelId);
+        if (!pieEl || !labelEl) return;
+        var p = Number(percent || 0);
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+        pieEl.style.background = 'conic-gradient(' + color + ' 0 ' + p + '%, #e5e7eb ' + p + '% 100%)';
+        labelEl.innerHTML = '成功 ' + p + '%<br>未成功 ' + (Math.round((100 - p) * 100) / 100) + '%';
+      }
+      function renderServerHourly(list) {
+        var wrap = document.getElementById('twofa-server-hourly-list');
+        if (!wrap) return;
+        list = list || [];
+        if (!list.length) {
+          wrap.innerHTML = '<div>暂无数据</div>';
+          return;
+        }
+        wrap.innerHTML = list.map(function(server) {
+          var name = server.serverIp || '未知';
+          var total = server.total || 0;
+          var hourly = server.hourly || [];
+          var points = hourly.filter(function(h) { return (h.count || 0) > 0; })
+            .map(function(h) { return h.hour + ': ' + h.count; });
+          var text = points.length ? points.join(' | ') : '全天 0';
+          return '<div style="padding:8px 10px;border:1px solid rgba(251,113,133,0.18);border-radius:10px;background:rgba(255,255,255,0.78);">' +
+            '<div style="font-weight:600;color:var(--text);margin-bottom:4px;">' + name + ' <span style="color:var(--text-muted);font-weight:500;">(总计 ' + total + ')</span></div>' +
+            '<div style="white-space:nowrap;overflow:auto;padding-bottom:2px;">' + text + '</div>' +
+            '</div>';
+        }).join('');
+      }
+      function render(data) {
+        document.getElementById('stat-today-register').textContent = fmtNum(data.todayRegister);
+        document.getElementById('stat-today-register-success').textContent = fmtNum(data.todayRegisterSuccess);
+        document.getElementById('stat-today-2fa').textContent = fmtNum(data.today2faSuccess);
+        document.getElementById('stat-today-retention').textContent = fmtNum(data.todayNeedRetention);
+        document.getElementById('stat-register-success-rate').textContent = (data.todayRegisterSuccessRate != null ? data.todayRegisterSuccessRate : 0) + '%';
+        document.getElementById('stat-twofa-setup-rate').textContent = (data.today2faSetupSuccessRate != null ? data.today2faSetupSuccessRate : 0) + '%';
+        renderRatePie(data.todayRegisterSuccessRate != null ? data.todayRegisterSuccessRate : 0, 'register-success-rate-pie', 'register-success-rate-pie-label', '#fb7185');
+        renderRatePie(data.today2faSetupSuccessRate != null ? data.today2faSetupSuccessRate : 0, 'twofa-setup-rate-pie', 'twofa-setup-rate-pie-label', '#6366f1');
+
+        // 当 2FA 成功数为 0 时，取消心跳效果，避免无意义动效
+        var twofaCard = document.querySelector('#overview-stats .stat-card.green');
+        if (twofaCard) {
+          if ((data.today2faSuccess || 0) > 0) {
+            twofaCard.classList.add('heartbeat');
+          } else {
+            twofaCard.classList.remove('heartbeat');
+          }
+        }
+
+        var detail = data.twofaDetail || null;
+        var forceMock = /(?:\?|&)mock=1(?:&|$)/.test(location.search || '');
+        var hasRealDist = detail && (
+          (detail.androidVersionDist && detail.androidVersionDist.length) ||
+          (detail.behaviorDist && detail.behaviorDist.length) ||
+          (detail.tiktokVersionDist && detail.tiktokVersionDist.length) ||
+          (detail.countryDist && detail.countryDist.length) ||
+          (detail.phoneServerIpDist && detail.phoneServerIpDist.length)
+        );
+        // 兜底策略：无真实分布数据时自动显示 mock；或通过 ?mock=1 强制显示
+        if (forceMock || !hasRealDist) {
+          detail = Object.assign({}, MOCK_TWOFA_DETAIL);
+        }
+        if (detail) {
+          renderDist(detail.androidVersionDist || [], 'twofa-android-list');
+          renderDist(detail.behaviorDist || [], 'twofa-behavior-list');
+          renderDist(detail.tiktokVersionDist || [], 'twofa-tiktok-list');
+          renderDist(detail.countryDist || [], 'twofa-country-list');
+          renderDist(detail.phoneServerIpDist || [], 'twofa-server-ip-list');
+          renderPieFromDist(detail.androidVersionDist || [], 'twofa-android-pie', 'twofa-android-legend');
+          renderPieFromDist(detail.behaviorDist || [], 'twofa-behavior-pie', 'twofa-behavior-legend');
+          renderPieFromDist(detail.tiktokVersionDist || [], 'twofa-tiktok-pie', 'twofa-tiktok-legend');
+          renderPieFromDist(detail.countryDist || [], 'twofa-country-pie', 'twofa-country-legend');
+          renderPieFromDist(detail.phoneServerIpDist || [], 'twofa-server-pie', 'twofa-server-legend');
+          renderServerHourly(detail.serverHourly2fa || []);
+          var totalText = detail.trafficTotal != null ? fmtGb(detail.trafficTotal) : '-';
+          var avgText = detail.trafficAvgPerSuccess != null ? fmtGb(detail.trafficAvgPerSuccess) : '-';
+          var trafficTotalEl = document.getElementById('traffic-total');
+          var trafficAvgEl = document.getElementById('traffic-avg');
+          if (trafficTotalEl) trafficTotalEl.textContent = totalText;
+          if (trafficAvgEl) trafficAvgEl.textContent = avgText;
+        }
+
+        var trend = data.dailyTrend || [];
+        var maxVal = Math.max(1, Math.max.apply(null, trend.map(function(d) {
+          return Math.max(d.register || 0, d.twofa || 0, d.retention || 0);
+        })));
+        var html = trend.map(function(d, i) {
+          var pctReg = maxVal > 0 ? ((d.register || 0) / maxVal * 100) : 0;
+          var pct2fa = maxVal > 0 ? ((d.twofa || 0) / maxVal * 100) : 0;
+          var pctRet = maxVal > 0 ? ((d.retention || 0) / maxVal * 100) : 0;
+          var label = d.label || d.date;
+          var title = label ? label.replace(/"/g, '&quot;') : '';
+          return '<div class="trend-day' + (i === 6 ? ' today' : '') + '" data-register="' + (d.register || 0) +
+            '" data-twofa="' + (d.twofa || 0) + '" data-retention="' + (d.retention || 0) +
+            '" data-label="' + title + '">' +
+            '<div class="trend-day-bars">' +
+            '<div class="trend-day-bar reg" style="height:' + pctReg + '%"></div>' +
+            '<div class="trend-day-bar twofa" style="height:' + pct2fa + '%"></div>' +
+            '<div class="trend-day-bar ret" style="height:' + pctRet + '%"></div>' +
+            '</div>' +
+            '<div class="vals">' + (d.register || 0) + ' / ' + (d.twofa || 0) + ' / ' + (d.retention || 0) + '</div>' +
+            '<span class="label">' + (label || '') + '</span></div>';
+        }).join('');
+        trendBars.innerHTML = html;
+
+        var tooltip = document.createElement('div');
+        tooltip.className = 'trend-tooltip';
+        tooltip.style.display = 'none';
+        trendBars.appendChild(tooltip);
+
+        trendBars.querySelectorAll('.trend-day').forEach(function(dayEl) {
+          dayEl.addEventListener('mouseenter', function(e) {
+            var reg = this.getAttribute('data-register') || '0';
+            var twofa = this.getAttribute('data-twofa') || '0';
+            var ret = this.getAttribute('data-retention') || '0';
+            var label = this.getAttribute('data-label') || '';
+            tooltip.innerHTML = (label ? label + '<br>' : '') +
+              '注册: ' + reg + ' · 2FA: ' + twofa + ' · 留存: ' + ret;
+            tooltip.style.display = 'block';
+            var rect = trendBars.getBoundingClientRect();
+            var x = (e.clientX - rect.left);
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = '0px';
+          });
+          dayEl.addEventListener('mousemove', function(e) {
+            if (tooltip.style.display === 'none') return;
+            var rect = trendBars.getBoundingClientRect();
+            var x = (e.clientX - rect.left);
+            tooltip.style.left = x + 'px';
+          });
+          dayEl.addEventListener('mouseleave', function() {
+            tooltip.style.display = 'none';
+          });
+        });
+
+        // 七日流量曲线
+        if (trafficBars) {
+          var maxTraffic = Math.max(1, Math.max.apply(null, trend.map(function(d){
+            return d.trafficTotal || 0;
+          })));
+          var html2 = trend.map(function(d,i){
+            var total = d.trafficTotal || 0;
+            var avgT  = d.trafficAvg || 0;
+            var label = d.label || d.date;
+            var title = label ? label.replace(/"/g, '&quot;') : '';
+            var pctTotal = maxTraffic > 0 ? (total / maxTraffic * 100) : 0;
+            var pctAvg   = maxTraffic > 0 ? (avgT   / maxTraffic * 100) : 0;
+            return '<div class="trend-day' + (i === 6 ? ' today' : '') + '" ' +
+              'data-total="' + total + '" data-avg="' + avgT + '" data-label="' + title + '">' +
+              '<div class="trend-day-bars">' +
+              '<div class="trend-day-bar reg" style="height:' + pctTotal + '%"></div>' +
+              '<div class="trend-day-bar ret" style="height:' + pctAvg + '%"></div>' +
+              '</div>' +
+              '<div class="vals">' + fmtGb(total) + ' / ' + fmtGb(avgT) + '</div>' +
+              '<span class="label">' + (label || '') + '</span></div>';
+          }).join('');
+          trafficBars.innerHTML = html2;
+
+          var ttip = document.createElement('div');
+          ttip.className = 'trend-tooltip';
+          ttip.style.display = 'none';
+          trafficBars.appendChild(ttip);
+
+          trafficBars.querySelectorAll('.trend-day').forEach(function(el){
+            el.addEventListener('mouseenter', function(e){
+              var label = this.getAttribute('data-label') || '';
+              var total = this.getAttribute('data-total') || '0';
+              var avgT  = this.getAttribute('data-avg') || '0';
+              ttip.innerHTML = (label ? label + '<br>' : '') +
+                '总流量: ' + fmtGb(total) + ' · 单个平均: ' + fmtGb(avgT);
+              ttip.style.display = 'block';
+              var rect = trafficBars.getBoundingClientRect();
+              var x = (e.clientX - rect.left);
+              ttip.style.left = x + 'px';
+              ttip.style.top = '0px';
+            });
+            el.addEventListener('mousemove', function(e){
+              if (ttip.style.display === 'none') return;
+              var rect = trafficBars.getBoundingClientRect();
+              var x = (e.clientX - rect.left);
+              ttip.style.left = x + 'px';
+            });
+            el.addEventListener('mouseleave', function(){
+              ttip.style.display = 'none';
+            });
+          });
+        }
+      }
+      function loadDailyRegister(dateStr) {
+        if (forceMockPage) {
+          render(buildMockOverviewData(dateStr));
+          return;
+        }
+        var url = '/api/statistics/daily-register';
+        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (res.success && res.data) {
+              var d = res.data;
+              render({
+                todayRegister: d.todayRegister || 0,
+                todayRegisterSuccess: d.todayRegisterSuccess || 0,
+                today2faSuccess: d.today2faSuccess || 0,
+                todayNeedRetention: d.todayNeedRetention || 0,
+                todayRegisterSuccessRate: d.todayRegisterSuccessRate != null ? d.todayRegisterSuccessRate : 0,
+                today2faSetupSuccessRate: d.today2faSetupSuccessRate != null ? d.today2faSetupSuccessRate : 0,
+                dailyTrend: d.dailyTrend || [],
+                twofaDetail: d.twofaDetail || null
+              });
+            } else {
+              document.getElementById('stat-today-register').textContent = '-';
+              document.getElementById('stat-today-register-success').textContent = '-';
+              document.getElementById('stat-today-2fa').textContent = '-';
+              document.getElementById('stat-today-retention').textContent = '-';
+              document.getElementById('stat-register-success-rate').textContent = '-';
+              document.getElementById('stat-twofa-setup-rate').textContent = '-';
+              renderRatePie(0, 'register-success-rate-pie', 'register-success-rate-pie-label', '#fb7185');
+              renderRatePie(0, 'twofa-setup-rate-pie', 'twofa-setup-rate-pie-label', '#6366f1');
+              trendBars.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">暂无数据 ♡</div>';
+            }
+          })
+          .catch(function() {
+            document.getElementById('stat-today-register').textContent = '—';
+            document.getElementById('stat-today-register-success').textContent = '—';
+            document.getElementById('stat-today-2fa').textContent = '—';
+            document.getElementById('stat-today-retention').textContent = '—';
+            document.getElementById('stat-register-success-rate').textContent = '—';
+            document.getElementById('stat-twofa-setup-rate').textContent = '—';
+            renderRatePie(0, 'register-success-rate-pie', 'register-success-rate-pie-label', '#fb7185');
+            renderRatePie(0, 'twofa-setup-rate-pie', 'twofa-setup-rate-pie-label', '#6366f1');
+            trendBars.innerHTML = '<div style="color:var(--error);padding:20px;text-align:center;">加载失败，请检查接口</div>';
+          });
+      }
+      if (dateInput) {
+        var todayStr = toYmd(new Date());
+        var fpOverview = flatpickr(dateInput, {
+          locale: 'zh',
+          dateFormat: 'Y-m-d',
+          defaultDate: todayStr,
+          maxDate: todayStr,
+          allowInput: false,
+          onChange: function(sel, dateStr) { if (dateStr) loadDailyRegister(dateStr); }
+        });
+        var btnToday = document.getElementById('overview-btn-today');
+        if (btnToday) btnToday.addEventListener('click', function() {
+          var t = toYmd(new Date());
+          fpOverview.setDate(t, true);
+          loadDailyRegister(t);
+        });
+      }
+      loadDailyRegister(toYmd(new Date()));
+    })();
+
+    // 加载封号率统计 + 最近7天趋势
+    (function() {
+      var dateInput = document.getElementById('block-rate-date');
+      var trendBars = document.getElementById('block-rate-trend-bars');
+      var forceMockPage = /(?:\?|&)mock=1(?:&|$)/.test(location.search || '');
+      var MOCK_BLOCK_RATE_DATA = {
+        nextDay: { baseDate: '2026-03-18', total: 1847, blocked: 213, blockRate: 11.53, label: '次日封号率' },
+        threeDay: { baseDate: '2026-03-16', total: 1698, blocked: 285, blockRate: 16.78, label: '3天封号率' },
+        sevenDay: { baseDate: '2026-03-12', total: 1480, blocked: 356, blockRate: 24.05, label: '7天封号率' },
+        blockedDetail: {
+          androidVersionDist: [
+            { value: '14', count: 438, percent: 51.59 },
+            { value: '13', count: 386, percent: 45.46 },
+            { value: '12', count: 25, percent: 2.95 }
+          ],
+          behaviorDist: [
+            { value: 'nickname_skip', count: 382, percent: 44.99 },
+            { value: 'nickname_normal', count: 301, percent: 35.45 },
+            { value: 'bio_skip', count: 102, percent: 12.01 },
+            { value: 'bio_normal', count: 64, percent: 7.55 }
+          ],
+          tiktokVersionDist: [
+            { value: '43.9.3', count: 472, percent: 55.59 },
+            { value: '43.1.15', count: 178, percent: 20.97 },
+            { value: '43.6.3', count: 112, percent: 13.19 },
+            { value: '43.1.4', count: 87, percent: 10.25 }
+          ],
+          countryDist: [
+            { value: 'US', count: 804, percent: 94.7 },
+            { value: 'BR', count: 45, percent: 5.3 }
+          ],
+          phoneServerIpDist: [
+            { value: '10.7.117.117', count: 164, percent: 19.32 },
+            { value: '10.7.169.151', count: 153, percent: 18.02 },
+            { value: '10.7.59.169', count: 149, percent: 17.55 },
+            { value: '10.7.136.129', count: 122, percent: 14.37 },
+            { value: '10.7.8.64', count: 114, percent: 13.43 },
+            { value: '10.7.184.117', count: 103, percent: 12.13 },
+            { value: '10.13.151.168', count: 32, percent: 3.77 },
+            { value: '10.13.161.137', count: 12, percent: 1.41 }
+          ]
+        },
+        blockedDetailByPeriod: {
+          nextDay: {
+            androidVersionDist: [{ value: '14', count: 91, percent: 42.72 }, { value: '13', count: 108, percent: 50.7 }, { value: '12', count: 14, percent: 6.57 }],
+            behaviorDist: [{ value: 'nickname_skip', count: 95, percent: 44.6 }, { value: 'nickname_normal', count: 76, percent: 35.68 }, { value: 'bio_skip', count: 25, percent: 11.74 }, { value: 'bio_normal', count: 17, percent: 7.98 }],
+            tiktokVersionDist: [{ value: '43.9.3', count: 118, percent: 55.4 }, { value: '43.1.15', count: 44, percent: 20.66 }, { value: '43.6.3', count: 28, percent: 13.15 }, { value: '43.1.4', count: 23, percent: 10.8 }],
+            countryDist: [{ value: 'US', count: 201, percent: 94.37 }, { value: 'BR', count: 12, percent: 5.63 }],
+            phoneServerIpDist: [{ value: '10.7.117.117', count: 43, percent: 20.19 }, { value: '10.7.169.151', count: 39, percent: 18.31 }, { value: '10.7.59.169', count: 37, percent: 17.37 }]
+          },
+          threeDay: {
+            androidVersionDist: [{ value: '14', count: 152, percent: 53.33 }, { value: '13', count: 122, percent: 42.81 }, { value: '12', count: 11, percent: 3.86 }],
+            behaviorDist: [{ value: 'nickname_skip', count: 123, percent: 43.16 }, { value: 'nickname_normal', count: 104, percent: 36.49 }, { value: 'bio_skip', count: 36, percent: 12.63 }, { value: 'bio_normal', count: 22, percent: 7.72 }],
+            tiktokVersionDist: [{ value: '43.9.3', count: 165, percent: 57.89 }, { value: '43.1.15', count: 60, percent: 21.05 }, { value: '43.6.3', count: 35, percent: 12.28 }, { value: '43.1.4', count: 25, percent: 8.77 }],
+            countryDist: [{ value: 'US', count: 269, percent: 94.39 }, { value: 'BR', count: 16, percent: 5.61 }],
+            phoneServerIpDist: [{ value: '10.7.117.117', count: 56, percent: 19.65 }, { value: '10.7.169.151', count: 51, percent: 17.89 }, { value: '10.7.59.169', count: 49, percent: 17.19 }]
+          },
+          sevenDay: {
+            androidVersionDist: [{ value: '14', count: 195, percent: 54.78 }, { value: '13', count: 156, percent: 43.82 }, { value: '12', count: 5, percent: 1.4 }],
+            behaviorDist: [{ value: 'nickname_skip', count: 164, percent: 46.07 }, { value: 'nickname_normal', count: 121, percent: 33.99 }, { value: 'bio_skip', count: 41, percent: 11.52 }, { value: 'bio_normal', count: 30, percent: 8.43 }],
+            tiktokVersionDist: [{ value: '43.9.3', count: 189, percent: 53.09 }, { value: '43.1.15', count: 74, percent: 20.79 }, { value: '43.6.3', count: 49, percent: 13.76 }, { value: '43.1.4', count: 44, percent: 12.36 }],
+            countryDist: [{ value: 'US', count: 334, percent: 93.82 }, { value: 'BR', count: 22, percent: 6.18 }],
+            phoneServerIpDist: [{ value: '10.7.117.117', count: 65, percent: 18.26 }, { value: '10.7.169.151', count: 63, percent: 17.7 }, { value: '10.7.59.169', count: 63, percent: 17.7 }]
+          }
+        }
+      };
+      var MOCK_BLOCK_TREND_DATA = {
+        trend: [
+          { date: '2026-03-13', label: '03-13', total: 1501, blocked: 301, blockRate: 20.05 },
+          { date: '2026-03-14', label: '03-14', total: 1564, blocked: 287, blockRate: 18.35 },
+          { date: '2026-03-15', label: '03-15', total: 1622, blocked: 274, blockRate: 16.89 },
+          { date: '2026-03-16', label: '03-16', total: 1698, blocked: 285, blockRate: 16.78 },
+          { date: '2026-03-17', label: '03-17', total: 1765, blocked: 262, blockRate: 14.84 },
+          { date: '2026-03-18', label: '03-18', total: 1847, blocked: 213, blockRate: 11.53 },
+          { date: '2026-03-19', label: '03-19', total: 1901, blocked: 198, blockRate: 10.42 }
+        ]
+      };
+      function toYmd(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function fillDescDatesFromDate(ymd) {
+        var p = (ymd || toYmd(new Date())).split('-');
+        if (p.length < 3) return;
+        var base = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+        function addDays(n) {
+          var x = new Date(base);
+          x.setDate(x.getDate() - n);
+          return x.getMonth() + 1 + '月' + x.getDate() + '日';
+        }
+        var el1 = document.getElementById('desc-date-1');
+        var el3 = document.getElementById('desc-date-3');
+        var el7 = document.getElementById('desc-date-7');
+        if (el1) el1.textContent = addDays(1);
+        if (el3) el3.textContent = addDays(3);
+        if (el7) el7.textContent = addDays(7);
+      }
+      function fmtDateStr(ymd) {
+        if (!ymd) return '';
+        var p = String(ymd).split('-');
+        if (p.length >= 3) return p[1] + '月' + parseInt(p[2], 10) + '日';
+        return ymd;
+      }
+      function renderDist(list, elId) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        list = list || [];
+        if (!list.length) {
+          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
+          return;
+        }
+        el.innerHTML = list.map(function(item, idx) {
+          var name = item.value || '未知';
+          var count = item.count || 0;
+          var pct = item.percent != null ? Number(item.percent) : 0;
+          if (pct < 0) pct = 0;
+          if (pct > 100) pct = 100;
+          return '<div class="item-row">' +
+            '<div class="row-head">' +
+            '<div class="left"><span class="rank">' + (idx + 1) + '</span><span class="name" title="' + name + '">' + name + '</span></div>' +
+            '<span class="meta">' + count + ' · ' + pct + '%</span>' +
+            '</div>' +
+            '<div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
+            '</div>';
+        }).join('');
+      }
+      function renderPieFromDist(list, pieId, legendId) {
+        var pieEl = document.getElementById(pieId);
+        var legendEl = document.getElementById(legendId);
+        if (!pieEl || !legendEl) return;
+        list = list || [];
+        if (!list.length) {
+          pieEl.style.background = 'conic-gradient(#e5e7eb 0 100%)';
+          pieEl.innerHTML = '';
+          legendEl.innerHTML = '<div style="opacity:.8;">暂无数据</div>';
+          return;
+        }
+        var palette = ['#fb7185', '#f59e0b', '#10b981', '#6366f1', '#06b6d4', '#a855f7', '#f43f5e', '#84cc16'];
+        var top = list.slice(0, 6);
+        var start = 0;
+        var segs = [];
+        var legend = [];
+        top.forEach(function(item, i) {
+          var p = item.percent != null ? Number(item.percent) : 0;
+          var end = Math.min(100, start + p);
+          var color = palette[i % palette.length];
+          segs.push(color + ' ' + start + '% ' + end + '%');
+          var name = item.value || '未知';
+          var cnt = item.count || 0;
+          legend.push(
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;">' +
+              '<div style="display:flex;align-items:center;gap:6px;min-width:0;">' +
+                '<span style="width:16px;height:16px;border-radius:999px;background:' + color + ';color:#fff;font-size:0.62rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">' + (i + 1) + '</span>' +
+                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">' + name + '</span>' +
+              '</div>' +
+              '<span style="white-space:nowrap;color:var(--text-muted);font-size:0.72rem;">' + cnt + ' · ' + p + '%</span>' +
+            '</div>'
+          );
+          start = end;
+        });
+        if (start < 100) {
+          segs.push('#e5e7eb ' + start + '% 100%');
+        }
+        pieEl.style.background = 'conic-gradient(' + segs.join(',') + ')';
+        pieEl.innerHTML = '';
+        legendEl.innerHTML = legend.join('');
+      }
+      function renderBlockRate(data) {
+        var items = [
+          { key: 'nextDay', rateId: 'block-next-day-rate', detailId: 'block-next-day-detail', descId: 'desc-date-1' },
+          { key: 'threeDay', rateId: 'block-three-day-rate', detailId: 'block-three-day-detail', descId: 'desc-date-3' },
+          { key: 'sevenDay', rateId: 'block-seven-day-rate', detailId: 'block-seven-day-detail', descId: 'desc-date-7' }
+        ];
+        items.forEach(function(it) {
+          var d = data[it.key];
+          if (!d) return;
+          document.getElementById(it.rateId).textContent = (d.blockRate != null ? d.blockRate : 0) + '%';
+          document.getElementById(it.detailId).textContent = d.baseDate + ' 共' + d.total + ' 封' + d.blocked;
+          var descEl = document.getElementById(it.descId);
+          if (descEl) descEl.textContent = fmtDateStr(d.baseDate);
+        });
+
+        // 根据封号率给卡片加/去掉 alert 效果
+        ['block-next-day-rate','block-three-day-rate','block-seven-day-rate'].forEach(function(id){
+          var el = document.getElementById(id);
+          if (!el) return;
+          var card = el.closest('.stat-card');
+          if (!card) return;
+          var val = parseFloat((el.textContent || '').replace('%','')) || 0;
+          if (val >= 30) card.classList.add('alert');
+          else card.classList.remove('alert');
+        });
+
+        var selectedKey = window.__blockPeriodKey || 'nextDay';
+        var currentItem = data[selectedKey] || null;
+        var labelEl = document.getElementById('block-period-label');
+        var blockedEl = document.getElementById('block-period-blocked');
+        var totalEl = document.getElementById('block-period-total');
+        var rateEl = document.getElementById('block-period-rate');
+        if (currentItem) {
+          if (labelEl) labelEl.textContent = currentItem.label || selectedKey;
+          if (blockedEl) blockedEl.textContent = currentItem.blocked != null ? currentItem.blocked : 0;
+          if (totalEl) totalEl.textContent = currentItem.total != null ? currentItem.total : 0;
+          if (rateEl) rateEl.textContent = (currentItem.blockRate != null ? currentItem.blockRate : 0) + '%';
+        }
+
+        var byPeriod = data.blockedDetailByPeriod || {};
+        var bd = byPeriod[selectedKey] || data.blockedDetail || {};
+        renderDist(bd.androidVersionDist || [], 'block-android-list');
+        renderDist(bd.behaviorDist || [], 'block-behavior-list');
+        renderDist(bd.tiktokVersionDist || [], 'block-tiktok-list');
+        renderDist(bd.countryDist || [], 'block-country-list');
+        renderDist(bd.phoneServerIpDist || [], 'block-server-ip-list');
+        var hasRateDistFields =
+          Object.prototype.hasOwnProperty.call(bd, 'androidVersionRateDist') ||
+          Object.prototype.hasOwnProperty.call(bd, 'behaviorRateDist') ||
+          Object.prototype.hasOwnProperty.call(bd, 'tiktokVersionRateDist') ||
+          Object.prototype.hasOwnProperty.call(bd, 'countryRateDist') ||
+          Object.prototype.hasOwnProperty.call(bd, 'phoneServerIpRateDist');
+        if (hasRateDistFields) {
+          renderRateDist(bd.androidVersionRateDist || [], 'block-rate-android-list');
+          renderRateDist(bd.behaviorRateDist || [], 'block-rate-behavior-list');
+          renderRateDist(bd.tiktokVersionRateDist || [], 'block-rate-tiktok-list');
+          renderRateDist(bd.countryRateDist || [], 'block-rate-country-list');
+          renderRateDist(bd.phoneServerIpRateDist || [], 'block-rate-server-ip-list');
+        } else {
+          renderMissingRateHint('block-rate-android-list');
+          renderMissingRateHint('block-rate-behavior-list');
+          renderMissingRateHint('block-rate-tiktok-list');
+          renderMissingRateHint('block-rate-country-list');
+          renderMissingRateHint('block-rate-server-ip-list');
+        }
+        renderPieFromDist(bd.androidVersionDist || [], 'block-android-pie', 'block-android-legend');
+        renderPieFromDist(bd.behaviorDist || [], 'block-behavior-pie', 'block-behavior-legend');
+        renderPieFromDist(bd.tiktokVersionDist || [], 'block-tiktok-pie', 'block-tiktok-legend');
+        renderPieFromDist(bd.countryDist || [], 'block-country-pie', 'block-country-legend');
+        renderPieFromDist(bd.phoneServerIpDist || [], 'block-server-pie', 'block-server-legend');
+
+        var btnMap = {
+          nextDay: document.getElementById('btn-block-next-day'),
+          threeDay: document.getElementById('btn-block-three-day'),
+          sevenDay: document.getElementById('btn-block-seven-day')
+        };
+        Object.keys(btnMap).forEach(function(k) {
+          var b = btnMap[k];
+          if (!b) return;
+          if (k === selectedKey) {
+            b.classList.remove('ghost');
+            b.classList.add('primary');
+          } else {
+            b.classList.remove('primary');
+            b.classList.add('ghost');
+          }
+        });
+      }
+      function renderBlockTrend(data) {
+        if (!trendBars) return;
+        var list = (data && data.trend) || [];
+        if (!list.length) {
+          trendBars.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">暂无趋势数据 ♡</div>';
+          return;
+        }
+        var maxRate = Math.max(1, Math.max.apply(null, list.map(function(it) {
+          return (it.blockRate != null ? it.blockRate : 0);
+        })));
+        var html = list.map(function(it, idx) {
+          var rate = it.blockRate != null ? it.blockRate : 0;
+          var pct = maxRate > 0 ? (rate / maxRate * 100) : 0;
+          var label = it.label || it.date;
+          return '<div class="trend-day' + (idx === list.length - 1 ? ' today' : '') + '" ' +
+            'data-rate="' + rate + '" data-total="' + (it.total || 0) + '" data-blocked="' + (it.blocked || 0) + '" data-label="' + (label || '') + '">' +
+            '<div class="trend-day-bars">' +
+            '<div class="trend-day-bar twofa" style="height:' + pct + '%"></div>' +
+            '</div>' +
+            '<div class="vals">' + rate + '%</div>' +
+            '<span class="label">' + (label || '') + '</span></div>';
+        }).join('');
+        trendBars.innerHTML = html;
+        // 悬停提示：显示封号率 + 总数/封禁数
+        var tooltip = document.createElement('div');
+        tooltip.className = 'trend-tooltip';
+        tooltip.style.display = 'none';
+        trendBars.appendChild(tooltip);
+
+        trendBars.querySelectorAll('.trend-day').forEach(function(el){
+          el.addEventListener('mouseenter', function(e){
+            var label = this.getAttribute('data-label') || '';
+            var rate  = this.getAttribute('data-rate') || '0';
+            var total = this.getAttribute('data-total') || '0';
+            var blocked = this.getAttribute('data-blocked') || '0';
+            tooltip.innerHTML = (label ? label + '<br>' : '') +
+              '封号率: ' + rate + '% · 总数: ' + total + ' · 封禁: ' + blocked;
+            tooltip.style.display = 'block';
+            var rect = trendBars.getBoundingClientRect();
+            var x = (e.clientX - rect.left);
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = '0px';
+          });
+          el.addEventListener('mousemove', function(e){
+            if (tooltip.style.display === 'none') return;
+            var rect = trendBars.getBoundingClientRect();
+            var x = (e.clientX - rect.left);
+            tooltip.style.left = x + 'px';
+          });
+          el.addEventListener('mouseleave', function(){
+            tooltip.style.display = 'none';
+          });
+        });
+      }
+      function loadBlockRate(dateStr) {
+        if (forceMockPage) {
+          renderBlockRate(MOCK_BLOCK_RATE_DATA);
+          renderBlockTrend(MOCK_BLOCK_TREND_DATA);
+          fillDescDatesFromDate(dateStr);
+          return;
+        }
+        var url = '/api/statistics/block-rate';
+        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (res.success && res.data) renderBlockRate(res.data);
+            else {
+              document.getElementById('block-next-day-rate').textContent = '-';
+              document.getElementById('block-three-day-rate').textContent = '-';
+              document.getElementById('block-seven-day-rate').textContent = '-';
+              fillDescDatesFromDate(dateStr);
+            }
+          })
+          .catch(function() {
+            document.getElementById('block-next-day-rate').textContent = '—';
+            document.getElementById('block-three-day-rate').textContent = '—';
+            document.getElementById('block-seven-day-rate').textContent = '—';
+            fillDescDatesFromDate(dateStr);
+          });
+        // 同时刷新最近7天封号率趋势（与卡片无强关联）
+        var trendUrl = '/api/statistics/block-rate-trend';
+        if (dateStr) trendUrl += '?date=' + encodeURIComponent(dateStr);
+        if (trendBars) {
+          fetch(trendUrl)
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              if (res.success && res.data) renderBlockTrend(res.data);
+              else renderBlockTrend(null);
+            })
+            .catch(function() {
+              renderBlockTrend(null);
+            });
+        }
+      }
+      if (dateInput) {
+        var todayStr = toYmd(new Date());
+        var fpBlock = flatpickr(dateInput, {
+          locale: 'zh',
+          dateFormat: 'Y-m-d',
+          defaultDate: todayStr,
+          maxDate: todayStr,
+          allowInput: false,
+          onChange: function(sel, dateStr) { if (dateStr) loadBlockRate(dateStr); }
+        });
+        var brBtnToday = document.getElementById('block-rate-btn-today');
+        if (brBtnToday) brBtnToday.addEventListener('click', function() {
+          var t = toYmd(new Date());
+          fpBlock.setDate(t, true);
+          loadBlockRate(t);
+        });
+      }
+      function bindBlockPeriodButtons() {
+        var m = {
+          'btn-block-next-day': 'nextDay',
+          'btn-block-three-day': 'threeDay',
+          'btn-block-seven-day': 'sevenDay'
+        };
+        Object.keys(m).forEach(function(id) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          el.addEventListener('click', function() {
+            window.__blockPeriodKey = m[id];
+            var d = dateInput && dateInput.value ? dateInput.value : toYmd(new Date());
+            loadBlockRate(d);
+          });
+        });
+      }
+      window.__blockPeriodKey = 'nextDay';
+      bindBlockPeriodButtons();
+      loadBlockRate(toYmd(new Date()));
+    })();
+
+    // 任务列表页：列表 + 编辑/恢复
+    (function() {
+      var tbody = document.getElementById('task-table-body');
+      var editTaskId = document.getElementById('edit-task-id');
+      var taskPageInfo = document.getElementById('task-page-info');
+      var taskPrevBtn = document.getElementById('task-prev');
+      var taskNextBtn = document.getElementById('task-next');
+      var taskPageSizeSel = document.getElementById('task-page-size');
+      var taskQueryBtn = document.getElementById('task-query-btn');
+      var taskPage = 1;
+      var taskSize = taskPageSizeSel ? parseInt(taskPageSizeSel.value, 10) || 50 : 50;
+      var taskTotalPages = 1;
+      if (!tbody || !editTaskId) return;
+
+      function statusBadge(status) {
+        var cls = 'status ';
+        switch (status) {
+          case 'RUNNING': cls += 'running'; break;
+          case 'COMPLETED': cls += 'completed'; break;
+          case 'PENDING': cls += 'pending'; break;
+          case 'FAILED': cls += 'failed'; break;
+          case 'STOPPED': cls += 'stopped'; break;
+          default: cls += 'pending';
+        }
+        return '<span class="' + cls + '">' + (status || '-') + '</span>';
+      }
+
+      function fmtTime(t) {
+        if (!t) return '-';
+        return t.replace('T', ' ').substring(0, 19);
+      }
+
+      function updateTaskPager(total) {
+        total = Number(total || 0);
+        taskTotalPages = Math.max(1, Math.ceil(total / taskSize));
+        if (taskPage > taskTotalPages) taskPage = taskTotalPages;
+        if (taskPageInfo) taskPageInfo.textContent = '第 ' + taskPage + ' / ' + taskTotalPages + ' 页';
+        if (taskPrevBtn) taskPrevBtn.disabled = taskPage <= 1;
+        if (taskNextBtn) taskNextBtn.disabled = taskPage >= taskTotalPages;
+      }
+
+      function loadTasks() {
+        var url = '/api/tt-register/tasks?page=' + encodeURIComponent(taskPage) + '&size=' + encodeURIComponent(taskSize);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success) {
+              tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--error);">加载失败：' + (res.message || '未知错误') + '</td></tr>';
+              updateTaskPager(0);
+              return;
+            }
+            var payload = res.data || {};
+            var list = payload.list || [];
+            // 后端分页结构：data = { list, total, page, size, totalPages, totalElements }
+            var total = (typeof payload.total !== 'undefined' ? payload.total : payload.totalElements) || 0;
+            updateTaskPager(total);
+            if (!list.length) {
+              tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">当前没有运行中的任务～</td></tr>';
+              return;
+            }
+            tbody.innerHTML = list.map(function(t) {
+              var rowCls = (t.status === 'RUNNING' ? ' class="task-running"' : '');
+              var phones = (t.phoneIds && t.phoneIds.length) ? t.phoneIds.join(',') : '-';
+              return '<tr' + rowCls + ' data-task-id="' + t.taskId + '" data-server-ip="' + (t.serverIp || '') + '">' +
+                '<td>' + t.taskId + '</td>' +
+                '<td>' + statusBadge(t.status) + '</td>' +
+                '<td>' + (t.serverIp || '-') + '</td>' +
+                '<td>' + phones + '</td>' +
+                '<td>' + (t.successCount || 0) + ' / ' + (t.failCount || 0) + '</td>' +
+                '<td>' + fmtTime(t.startTime) + '</td>' +
+                '<td>' + fmtTime(t.endTime) + '</td>' +
+                '<td><button type="button" class="ui-btn ghost btn-stop-task" data-id="' + t.taskId + '">停止</button></td>' +
+              '</tr>';
+            }).join('');
+
+            tbody.querySelectorAll('tr').forEach(function(tr) {
+              tr.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('btn-stop-task')) return;
+                var tid = this.getAttribute('data-task-id');
+                if (!tid) return;
+                editTaskId.value = tid;
+              });
+            });
+
+            tbody.querySelectorAll('.btn-stop-task').forEach(function(btn) {
+              btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var tid = this.getAttribute('data-id');
+                if (!tid) return;
+                fetch('/api/tt-register/stop/' + encodeURIComponent(tid), { method: 'POST' })
+                  .then(function(r) { return r.json(); })
+                  .then(function(res2) {
+                    alert(res2.message || (res2.success ? '任务已停止' : '停止失败'));
+                    loadTasks();
+                  })
+                  .catch(function() {
+                    alert('停止任务失败，请稍后重试');
+                  });
+              });
+            });
+          })
+          .catch(function() {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--error);">加载任务列表失败</td></tr>';
+            updateTaskPager(0);
+          });
+      }
+
+      function collectEditForm() {
+        var data = { taskId: editTaskId.value.trim() };
+        var v;
+        v = document.getElementById('edit-country').value.trim(); if (v) data.country = v;
+        v = document.getElementById('edit-sdk').value.trim(); if (v) data.sdk = v;
+        v = document.getElementById('edit-image-path').value.trim(); if (v) data.imagePath = v;
+        v = document.getElementById('edit-gaid-tag').value.trim(); if (v) data.gaidTag = v;
+        v = document.getElementById('edit-dynamic-ip').value.trim(); if (v) data.dynamicIpChannel = v;
+        v = document.getElementById('edit-static-ip').value.trim(); if (v) data.staticIpChannel = v;
+        v = document.getElementById('edit-biz').value.trim(); if (v) data.biz = v;
+        v = document.getElementById('edit-target-count').value.trim(); if (v) data.targetCount = v;
+        return data;
+      }
+
+      var btnSave = document.getElementById('btn-task-save');
+      var btnResume = document.getElementById('btn-task-resume');
+      if (taskPageSizeSel) {
+        taskPageSizeSel.addEventListener('change', function() {
+          var v = parseInt(this.value, 10);
+          if (!v || v < 1) v = 50;
+          taskSize = v;
+        });
+      }
+      if (taskQueryBtn) {
+        taskQueryBtn.addEventListener('click', function() {
+          var v = taskPageSizeSel ? parseInt(taskPageSizeSel.value, 10) : taskSize;
+          if (!v || v < 1) v = 50;
+          taskSize = v;
+          taskPage = 1;
+          loadTasks();
+        });
+      }
+      if (taskPrevBtn) {
+        taskPrevBtn.addEventListener('click', function() {
+          if (taskPage <= 1) return;
+          taskPage--;
+          loadTasks();
+        });
+      }
+      if (taskNextBtn) {
+        taskNextBtn.addEventListener('click', function() {
+          if (taskPage >= taskTotalPages) return;
+          taskPage++;
+          loadTasks();
+        });
+      }
+
+      if (btnSave) {
+        btnSave.addEventListener('click', function() {
+          if (!editTaskId.value.trim()) {
+            alert('请先在上面的列表中点击一个任务～');
+            return;
+          }
+          var payload = collectEditForm();
+          fetch('/api/tt-register/task/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              alert(res.message || (res.success ? '保存成功' : '保存失败'));
+            })
+            .catch(function() { alert('保存失败，请稍后重试'); });
+        });
+      }
+
+      if (btnResume) {
+        btnResume.addEventListener('click', function() {
+          var tid = editTaskId.value.trim();
+          if (!tid) {
+            alert('请先在上面的列表中点击一个任务～');
+            return;
+          }
+          fetch('/api/tt-register/task/resume/' + encodeURIComponent(tid), { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              alert(res.message || (res.success ? '任务已恢复' : '恢复失败'));
+              loadTasks();
+            })
+            .catch(function() { alert('恢复失败，请稍后重试'); });
+        });
+      }
+
+      loadTasks();
+    })();
+
+    // 留存信息：按日期加载留存记录
+    (function() {
+      var dateInput = document.getElementById('retention-date');
+      var tbody = document.getElementById('ret-tbody');
+      var retPageInfo = document.getElementById('ret-page-info');
+      var retPrevBtn = document.getElementById('ret-prev');
+      var retNextBtn = document.getElementById('ret-next');
+      var retPageSizeSel = document.getElementById('ret-page-size');
+      var retQueryBtn = document.getElementById('ret-query-btn');
+      var retPage = 1;
+      var retSize = retPageSizeSel ? parseInt(retPageSizeSel.value, 10) || 50 : 50;
+      var retTotalPages = 1;
+      function toYmd(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function updateRetPager(total) {
+        total = Number(total || 0);
+        retTotalPages = Math.max(1, Math.ceil(total / retSize));
+        if (retPage > retTotalPages) retPage = retTotalPages;
+        if (retPageInfo) retPageInfo.textContent = '第 ' + retPage + ' / ' + retTotalPages + ' 页';
+        if (retPrevBtn) retPrevBtn.disabled = retPage <= 1;
+        if (retNextBtn) retNextBtn.disabled = retPage >= retTotalPages;
+      }
+      function loadRetention(dateStr) {
+        if (!tbody) return;
+        var params = [];
+        if (dateStr) params.push('date=' + encodeURIComponent(dateStr));
+        params.push('page=' + encodeURIComponent(retPage));
+        params.push('size=' + encodeURIComponent(retSize));
+        var url = '/api/statistics/retention-records?' + params.join('&');
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">加载中…</td></tr>';
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success || !res.data) {
+              tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--error);">加载失败～</td></tr>';
+              updateRetPager(0);
+              return;
+            }
+            var d = res.data;
+            updateRetPager(d.total || 0);
+            document.getElementById('ret-total').textContent = d.total || 0;
+            document.getElementById('ret-script-ok').textContent = d.scriptSuccessCount || 0;
+            document.getElementById('ret-success-rate').textContent = (d.successRate != null ? d.successRate : 0) + '%';
+            document.getElementById('ret-backup-ok').textContent = d.backupSuccessCount || 0;
+            document.getElementById('ret-backup-rate').textContent = (d.backupRate != null ? d.backupRate : 0) + '%';
+            document.getElementById('ret-2fa-success').textContent = d.retention2faSuccess != null ? d.retention2faSuccess : 0;
+            document.getElementById('ret-logout').textContent = d.retentionLogout != null ? d.retentionLogout : 0;
+            // 当日 cohort & 全部 cohort 封号情况
+            var ct = d.cohortTotal != null ? d.cohortTotal : 0;
+            var cb = d.cohortBlocked != null ? d.cohortBlocked : 0;
+            var clo = d.cohortLogout != null ? d.cohortLogout : 0;
+            var cr = d.cohortBlockRate != null ? d.cohortBlockRate + '%' : '0%';
+            var act = d.allCohortTotal != null ? d.allCohortTotal : 0;
+            var acb = d.allCohortBlocked != null ? d.allCohortBlocked : 0;
+            var aclo = d.allCohortLogout != null ? d.allCohortLogout : 0;
+            var acr = d.allCohortBlockRate != null ? d.allCohortBlockRate + '%' : '0%';
+            var elCt = document.getElementById('ret-cohort-total');
+            var elCb = document.getElementById('ret-cohort-blocked');
+            var elClo = document.getElementById('ret-cohort-logout');
+            var elCr = document.getElementById('ret-cohort-rate');
+            var elAct = document.getElementById('ret-all-cohort-total');
+            var elAcb = document.getElementById('ret-all-cohort-blocked');
+            var elAclo = document.getElementById('ret-all-cohort-logout');
+            var elAcr = document.getElementById('ret-all-cohort-rate');
+            if (elCt) elCt.textContent = ct;
+            if (elCb) elCb.textContent = cb;
+            if (elClo) elClo.textContent = clo;
+            if (elCr) elCr.textContent = cr;
+            if (elAct) elAct.textContent = act;
+            if (elAcb) elAcb.textContent = acb;
+            if (elAclo) elAclo.textContent = aclo;
+            if (elAcr) elAcr.textContent = acr;
+            var heartsWrap = document.getElementById('ret-hearts');
+            if (heartsWrap) {
+              heartsWrap.innerHTML = '';
+              if ((d.successRate || 0) >= 60) {
+                var count = d.successRate >= 90 ? 3 : (d.successRate >= 75 ? 2 : 1);
+                for (var i = 0; i < count; i++) {
+                  var span = document.createElement('span');
+                  span.textContent = '♡';
+                  span.style.left = (20 + i * 16) + '%';
+                  span.style.animationDelay = (i * 0.25) + 's';
+                  heartsWrap.appendChild(span);
+                }
+              }
+            }
+            var list = d.records || [];
+            if (!list.length) {
+              tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">这一天还没有留存记录～</td></tr>';
+              return;
+            }
+            tbody.innerHTML = list.map(function(row) {
+              var scriptOk = row.scriptSuccess === true || row.scriptSuccess === 1;
+              var backupOk = row.backupSuccess === true || row.backupSuccess === 1;
+              return '<tr>' +
+                '<td>' + (row.taskId || '-') + '</td>' +
+                '<td>' + (row.phoneServerIp || '-') + ' / ' + (row.phoneId || '-') + '</td>' +
+                '<td>' + (row.accountRegisterId != null ? row.accountRegisterId : '-') + '</td>' +
+                '<td>' + (row.gaid || '-') + '</td>' +
+                '<td><span class="status ' + (scriptOk ? 'success' : 'failed') + '">' + (scriptOk ? '成功' : '失败') + '</span></td>' +
+                '<td><span class="status ' + (backupOk ? 'success' : 'failed') + '">' + (backupOk ? '成功' : '失败') + '</span></td>' +
+                '<td class="time">' + (row.createdAt || '-') + '</td>' +
+              '</tr>';
+            }).join('');
+          })
+          .catch(function() {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--error);">加载失败，请稍后重试</td></tr>';
+            updateRetPager(0);
+          });
+      }
+      if (dateInput) {
+        var todayStr = toYmd(new Date());
+        var fpRet = flatpickr(dateInput, {
+          locale: 'zh',
+          dateFormat: 'Y-m-d',
+          defaultDate: todayStr,
+          maxDate: todayStr,
+          allowInput: false,
+          onChange: function(sel, dateStr) { if (dateStr) loadRetention(dateStr); }
+        });
+        var btnToday = document.getElementById('retention-btn-today');
+        if (btnToday) btnToday.addEventListener('click', function() {
+          var t = toYmd(new Date());
+          fpRet.setDate(t, true);
+          retPage = 1;
+          loadRetention(t);
+        });
+        if (retPageSizeSel) {
+          retPageSizeSel.addEventListener('change', function() {
+            var v = parseInt(this.value, 10);
+            if (!v || v < 1) v = 50;
+            retSize = v;
+          });
+        }
+        if (retQueryBtn) {
+          retQueryBtn.addEventListener('click', function() {
+            var v = retPageSizeSel ? parseInt(retPageSizeSel.value, 10) : retSize;
+            if (!v || v < 1) v = 50;
+            retSize = v;
+            retPage = 1;
+            var d = dateInput.value || todayStr;
+            loadRetention(d);
+          });
+        }
+        if (retPrevBtn) {
+          retPrevBtn.addEventListener('click', function() {
+            if (retPage <= 1) return;
+            retPage--;
+            var d = dateInput.value || todayStr;
+            loadRetention(d);
+          });
+        }
+        if (retNextBtn) {
+          retNextBtn.addEventListener('click', function() {
+            if (retPage >= retTotalPages) return;
+            retPage++;
+            var d = dateInput.value || todayStr;
+            loadRetention(d);
+          });
+        }
+        // 初次进入默认查今天
+        loadRetention(todayStr);
+      }
+    })();
+  </script>
+</body>
+</html>
