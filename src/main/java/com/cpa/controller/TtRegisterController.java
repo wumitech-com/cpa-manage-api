@@ -68,6 +68,34 @@ public class TtRegisterController {
     }
 
     /**
+     * 新增留存任务（task_kind=RETENTION）
+     * 请求体: { "phoneId": "tt_farm_xxx", "serverIp": "10.7.136.129", "targetCount": 50, "country": "US", "imagePath": "" }
+     */
+    @PostMapping("/retention")
+    public Map<String, Object> createRetentionTask(@RequestBody Map<String, Object> request) {
+        log.info("接收到创建留存任务请求，参数: {}", request);
+        String phoneId = (String) request.get("phoneId");
+        String serverIp = (String) request.get("serverIp");
+        if (phoneId == null || phoneId.isEmpty() || serverIp == null || serverIp.isEmpty()) {
+            Map<String, Object> err = new HashMap<>();
+            err.put("success", false);
+            err.put("message", "phoneId 与 serverIp 不能为空");
+            return err;
+        }
+        Object tc = request.get("targetCount");
+        Integer targetCount = tc != null ? (tc instanceof Number ? ((Number) tc).intValue() : null) : null;
+        String country = (String) request.get("country");
+        String imagePath = (String) request.get("imagePath");
+        com.cpa.entity.TtRegisterTask task = ttRegisterService.createRetentionTask(phoneId, serverIp, targetCount, country, imagePath);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("success", true);
+        resp.put("message", "留存任务已创建");
+        resp.put("taskId", task.getTaskId());
+        resp.put("taskKind", task.getTaskKind());
+        return resp;
+    }
+
+    /**
      * 多设备并行注册TT账号（多个设备同时注册，每个设备可注册多个账号）
      * 
      * 请求参数格式:
@@ -213,14 +241,41 @@ public class TtRegisterController {
     }
     
     /**
-     * 获取所有任务列表
-     * 
-     * @return 所有任务列表
+     * 获取所有任务列表（分页）
+     *
+     * @param page 页码，从 1 开始
+     * @param size 每页条数
+     * @return 任务列表分页数据
      */
     @GetMapping("/tasks")
-    public Map<String, Object> getAllTasks() {
-        log.info("获取所有任务列表");
-        return ttRegisterService.getAllTasks();
+    public Map<String, Object> getAllTasks(@RequestParam(defaultValue = "1") int page,
+                                           @RequestParam(defaultValue = "20") int size) {
+        log.info("获取任务列表, page={}, size={}", page, size);
+        if (page < 1) {
+            page = 1;
+        }
+        if (size <= 0) {
+            size = 20;
+        }
+        return ttRegisterService.getAllTasks(page, size);
+    }
+
+    /**
+     * 更新任务配置（任务小窝中编辑）
+     */
+    @PostMapping("/task/update")
+    public Map<String, Object> updateTaskConfig(@RequestBody Map<String, Object> request) {
+        log.info("更新任务配置请求: {}", request);
+        return ttRegisterService.updateTaskConfig(request);
+    }
+
+    /**
+     * 恢复任务，将状态改回 PENDING
+     */
+    @PostMapping("/task/resume/{taskId}")
+    public Map<String, Object> resumeTask(@PathVariable String taskId) {
+        log.info("恢复任务请求，taskId: {}", taskId);
+        return ttRegisterService.resumeTask(taskId);
     }
     
     /**

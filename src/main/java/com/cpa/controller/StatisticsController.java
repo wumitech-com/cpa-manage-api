@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 /**
@@ -70,5 +72,84 @@ public class StatisticsController {
     public Map<String, Object> getDeviceUtilizationStatistics() {
         log.info("获取设备利用率统计");
         return statisticsService.getDeviceUtilizationStatistics();
+    }
+
+    /**
+     * 获取每日注册脚本统计（今日成功数、成功率、最近7天趋势）
+     * @param date 可选，查询基准日 yyyy-MM-dd，不传则默认今天
+     */
+    @GetMapping("/daily-register")
+    public Map<String, Object> getDailyRegisterStatistics(@RequestParam(required = false) String date) {
+        log.info("获取每日注册统计, date={}", date);
+        LocalDate queryDate = null;
+        if (date != null && !date.isEmpty()) {
+            try {
+                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+            } catch (Exception e) {
+                log.warn("解析日期失败: {}", date);
+            }
+        }
+        return statisticsService.getDailyRegisterStatistics(queryDate);
+    }
+
+    /**
+     * 获取封号率统计（次日、3天、7天）
+     * @param date 可选，查询基准日 yyyy-MM-dd，不传则默认今天
+     */
+    @GetMapping("/block-rate")
+    public Map<String, Object> getBlockRateStatistics(@RequestParam(required = false) String date) {
+        log.info("获取封号率统计, date={}", date);
+        LocalDate queryDate = null;
+        if (date != null && !date.isEmpty()) {
+            try {
+                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+            } catch (Exception e) {
+                log.warn("解析日期失败: {}", date);
+            }
+        }
+        return statisticsService.getBlockRateStatistics(queryDate);
+    }
+
+    /**
+     * 获取封号率最近7天趋势（与上面的卡片无强关联）
+     * @param date 可选，作为“今天”的参考 yyyy-MM-dd，不传则默认今天
+     */
+    @GetMapping("/block-rate-trend")
+    public Map<String, Object> getBlockRateTrend(@RequestParam(required = false) String date) {
+        log.info("获取封号率趋势统计, date={}", date);
+        LocalDate queryDate = null;
+        if (date != null && !date.isEmpty()) {
+            try {
+                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+            } catch (Exception e) {
+                log.warn("解析日期失败: {}", date);
+            }
+        }
+        return statisticsService.getBlockRateTrend(queryDate);
+    }
+
+    /**
+     * 留存日记：按日期查看留存任务执行记录（分页）
+     */
+    @GetMapping("/retention-records")
+    public Map<String, Object> getRetentionRecords(@RequestParam(required = false) String date,
+                                                   @RequestParam(defaultValue = "1") int page,
+                                                   @RequestParam(defaultValue = "20") int size) {
+        log.info("获取留存日记记录, date={}, page={}, size={}", date, page, size);
+        LocalDate queryDate = null;
+        if (date != null && !date.isEmpty()) {
+            try {
+                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+            } catch (Exception e) {
+                log.warn("解析日期失败: {}", date);
+            }
+        }
+        if (page < 1) {
+            page = 1;
+        }
+        if (size <= 0) {
+            size = 20;
+        }
+        return statisticsService.getRetentionRecords(queryDate, page, size);
     }
 }

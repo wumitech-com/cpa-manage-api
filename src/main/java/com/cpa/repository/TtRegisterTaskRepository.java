@@ -111,5 +111,17 @@ public interface TtRegisterTaskRepository extends BaseMapper<TtRegisterTask> {
         wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
         return selectList(wrapper);
     }
+
+    /**
+     * 查询待执行的留存任务（task_kind=RETENTION, status=PENDING, device_type 为 CLOUD_PHONE 或 null）
+     */
+    default List<TtRegisterTask> findPendingRetentionTasks() {
+        LambdaQueryWrapper<TtRegisterTask> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TtRegisterTask::getTaskKind, "RETENTION");
+        wrapper.eq(TtRegisterTask::getStatus, "PENDING");
+        wrapper.and(w -> w.isNull(TtRegisterTask::getDeviceType).or().eq(TtRegisterTask::getDeviceType, "CLOUD_PHONE"));
+        wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
+        return selectList(wrapper);
+    }
 }
 

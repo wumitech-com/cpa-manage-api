@@ -94,6 +94,13 @@ public class TtAccountRegister {
     private String ip;
 
     /**
+     * 国家代码（如 US、BR）
+     */
+    @TableField("country")
+    @Column(name = "country")
+    private String country;
+
+    /**
      * 行为（nickname_behavior_result）
      */
     @TableField("behavior")
@@ -172,10 +179,11 @@ public class TtAccountRegister {
 
     /**
      * 2FA是否设置成功（is_2fa_setup_success）
+     * 可能的值：1=true, 0=false, 2=DELAYED（刻意延迟/后续再做）
      */
     @TableField("is_2fa_setup_success")
     @Column(name = "is_2fa_setup_success")
-    private Boolean is2faSetupSuccess;
+    private Integer is2faSetupSuccess;
 
     /**
      * 备份接口调用是否成功（backup_success）
@@ -183,5 +191,29 @@ public class TtAccountRegister {
     @TableField("backup_success")
     @Column(name = "backup_success")
     private Boolean backupSuccess;
+
+    /**
+     * 是否需要后续留存（need_retention）
+     * 1=留存完成且后续按留存口径统计（可配合 is_2fa_setup_success=1）
+     * 2=留存账号登出（脚本 exitCode=8 后更新）
+     * 0=其他/未进入留存
+     */
+    @TableField("need_retention")
+    @Column(name = "need_retention")
+    private Integer needRetention;
+
+    /**
+     * 封禁时间（block_time），null 表示未封禁
+     */
+    @TableField("block_time")
+    @Column(name = "block_time")
+    private LocalDateTime blockTime;
+
+    /**
+     * 是否已卖出（is_sell_out），null 表示未卖出
+     */
+    @TableField("is_sell_out")
+    @Column(name = "is_sell_out")
+    private Integer isSellOut;
 }
 

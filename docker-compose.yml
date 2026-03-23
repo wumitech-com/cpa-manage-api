@@ -13,9 +13,7 @@ services:
       - TZ=Asia/Shanghai
       - JAVA_OPTS=-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Duser.timezone=Asia/Shanghai
       - SPRING_PROFILES_ACTIVE=prod
-      # 主板机环境变量配置
-      - MAINBOARD_PUBLIC_IP=206.119.108.2
-      - MAINBOARD_APPIUM_SERVER=10.7.124.25
+      # 云手机部署不需要主板机环境变量
     networks:
       - cpa-network
     healthcheck:

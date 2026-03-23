@@ -24,12 +24,17 @@ public class ApiService {
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
     
-    @Value("${cpa-api.base-url:https://cpa-api.wumitech.com}")
+    @Value("${cpa-api.base-url:http://cpa-api:8080}")
     private String baseUrl;
     
     // 初始化OkHttpClient和ObjectMapper
     public ApiService() {
+        // 配置连接池以复用HTTP连接，减少TCP连接数
+        // 最大空闲连接数：50，保持连接时间：5分钟
+        ConnectionPool connectionPool = new ConnectionPool(50, 5, TimeUnit.MINUTES);
+        
         this.okHttpClient = new OkHttpClient.Builder()
+                .connectionPool(connectionPool)  // 使用连接池复用连接
                 .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(600, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
@@ -136,6 +141,199 @@ public class ApiService {
         } catch (Exception e) {
             log.error("调用ResetPhoneEnv API异常: phoneId={}", phoneId, e);
             throw new RuntimeException("调用ResetPhoneEnv API失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 重置手机（TTFarmResetPhone，主要用于 10.13 网段服务器）
+     *
+     * 实际调用方式与后端一致：所有参数通过 query 传递，body 为空 text/plain。
+     */
+    public Map<String, Object> ttFarmResetPhone(String phoneId,
+                                                String phoneServerIp,
+                                                String xrayServerIp,
+                                                String country,
+                                                String sdk,
+                                                String imagePath,
+                                                String dynamicIpChannel,
+                                                boolean fastSwitch) {
+        try {
+            log.info("调用TTFarmResetPhone API: phoneId={}, phoneServerIp={}, xrayServerIp={}, country={}, sdk={}, imagePath={}, dynamicIpChannel={}, fastSwitch={}",
+                    phoneId, phoneServerIp, xrayServerIp, country, sdk, imagePath, dynamicIpChannel, fastSwitch);
+
+            HttpUrl.Builder urlBuilder = HttpUrl.parse(baseUrl + "/TTFarmResetPhone").newBuilder();
+            urlBuilder.addQueryParameter("phone_id", phoneId);
+            urlBuilder.addQueryParameter("phone_server_ip", phoneServerIp);
+            if (xrayServerIp != null && !xrayServerIp.isEmpty()) {
+                urlBuilder.addQueryParameter("xray_server_ip", xrayServerIp);
+            }
+            urlBuilder.addQueryParameter("country", country);
+            urlBuilder.addQueryParameter("sdk", sdk);
+            urlBuilder.addQueryParameter("image_path", imagePath);
+            urlBuilder.addQueryParameter("dynamic_ip_channel", dynamicIpChannel);
+            urlBuilder.addQueryParameter("fast_switch", String.valueOf(fastSwitch));
+
+            String url = urlBuilder.build().toString();
+            log.debug("TTFarmResetPhone请求URL: {}", url);
+
+            // 按对方接口实际用法，body 为空 text/plain
+            MediaType mediaType = MediaType.parse("text/plain");
+            RequestBody body = RequestBody.create("", mediaType);
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(body)
+                    .build();
+
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                int statusCode = response.code();
+                String responseBody = response.body() != null ? response.body().string() : null;
+
+                if (statusCode >= 200 && statusCode < 300) {
+                    if (responseBody != null && !responseBody.isEmpty()) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> result = objectMapper.readValue(responseBody, Map.class);
+                        log.info("TTFarmResetPhone API调用成功: {}", result);
+                        return result;
+                    } else {
+                        log.error("TTFarmResetPhone API调用成功但响应体为空: status={}", statusCode);
+                        throw new RuntimeException("TTFarmResetPhone API调用成功但响应体为空");
+                    }
+                } else {
+                    log.error("调用TTFarmResetPhone API服务器错误 ({}): phoneId={}, 响应: {}",
+                            statusCode, phoneId, responseBody);
+                    throw new RuntimeException("调用TTFarmResetPhone API失败 (" + statusCode + "): " + responseBody);
+                }
+            }
+        } catch (IOException e) {
+            log.error("调用TTFarmResetPhone API IO异常: phoneId={}", phoneId, e);
+            throw new RuntimeException("调用TTFarmResetPhone API失败: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("调用TTFarmResetPhone API异常: phoneId={}", phoneId, e);
+            throw new RuntimeException("调用TTFarmResetPhone API失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 恢复应用（RestoreApp，用于留存任务）
+     *
+     * @param phoneId 云手机ID
+     * @param serverIp 服务器IP
+     * @param packageName 包名（如 com.zhiliaoapp.musically）
+     * @param imagePath 镜像路径
+     * @param gaid 账号 GAID
+     * @return 执行结果
+     */
+    public Map<String, Object> restoreApp(String phoneId, String serverIp, String packageName,
+                                          String imagePath, String gaid) {
+        try {
+            log.info("调用RestoreApp API: phoneId={}, serverIp={}, packageName={}, gaid={}",
+                    phoneId, serverIp, packageName, gaid);
+            HttpUrl.Builder urlBuilder = HttpUrl.parse(baseUrl + "/RestoreApp").newBuilder();
+            urlBuilder.addQueryParameter("phone_id", phoneId);
+            urlBuilder.addQueryParameter("phone_server_ip", serverIp);
+            urlBuilder.addQueryParameter("package_name", packageName);
+            urlBuilder.addQueryParameter("image_path", imagePath != null ? imagePath : "");
+            urlBuilder.addQueryParameter("gaid", gaid != null ? gaid : "");
+            urlBuilder.addQueryParameter("restore_phone", "true");
+            String url = urlBuilder.build().toString();
+            MediaType mediaType = MediaType.parse("text/plain");
+            RequestBody body = RequestBody.create("", mediaType);
+            Request request = new Request.Builder().url(url).method("POST", body).build();
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                int statusCode = response.code();
+                String responseBody = response.body() != null ? response.body().string() : null;
+                if (statusCode >= 200 && statusCode < 300) {
+                    if (responseBody != null && !responseBody.isEmpty()) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> result = objectMapper.readValue(responseBody, Map.class);
+                        log.info("RestoreApp API调用成功: phoneId={}", phoneId);
+                        return result;
+                    }
+                    throw new RuntimeException("RestoreApp API响应体为空");
+                }
+                log.error("调用RestoreApp API错误 ({}): phoneId={}, 响应: {}", statusCode, phoneId, responseBody);
+                throw new RuntimeException("RestoreApp API失败 (" + statusCode + "): " + responseBody);
+            }
+        } catch (IOException e) {
+            log.error("调用RestoreApp API IO异常: phoneId={}", phoneId, e);
+            throw new RuntimeException("RestoreApp API失败: " + e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("调用RestoreApp API异常: phoneId={}", phoneId, e);
+            throw new RuntimeException("RestoreApp API失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 设置云手机网络（TTFarmSetupNetwork，用于恢复/留存后配置 IP）
+     *
+     * @param phoneId     云手机ID
+     * @param serverIp    云手机所在服务器IP
+     * @param countryCode 国家代码（如 US、MX）
+     * @param hasStaticIp 是否有静态IP
+     * @return 是否调用成功（responseStatus.code == 0）
+     */
+    public boolean ttFarmSetupNetwork(String phoneId, String serverIp, String countryCode, boolean hasStaticIp) {
+        try {
+            log.info("调用TTFarmSetupNetwork API: phoneId={}, serverIp={}, countryCode={}, hasStaticIp={}",
+                    phoneId, serverIp, countryCode, hasStaticIp);
+
+            HttpUrl.Builder urlBuilder = HttpUrl.parse(baseUrl + "/TTFarmSetupNetwork").newBuilder();
+            urlBuilder.addQueryParameter("phone_id", phoneId);
+            urlBuilder.addQueryParameter("phone_server_ip", serverIp);
+            urlBuilder.addQueryParameter("country_code", countryCode);
+            urlBuilder.addQueryParameter("has_static_ip", String.valueOf(hasStaticIp));
+
+            String url = urlBuilder.build().toString();
+            log.debug("TTFarmSetupNetwork 请求URL: {}", url);
+
+            MediaType mediaType = MediaType.parse("text/plain");
+            RequestBody body = RequestBody.create("", mediaType);
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(body)
+                    .build();
+
+            try (Response response = okHttpClient.newCall(request).execute()) {
+                int statusCode = response.code();
+                String responseBody = response.body() != null ? response.body().string() : null;
+
+                if (statusCode >= 200 && statusCode < 300) {
+                    if (responseBody != null && !responseBody.isEmpty()) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> result = objectMapper.readValue(responseBody, Map.class);
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> responseStatus = (Map<String, Object>) result.get("responseStatus");
+                        if (responseStatus != null) {
+                            Integer code = (Integer) responseStatus.get("code");
+                            String message = (String) responseStatus.get("message");
+                            String dynamicIp = (String) result.get("dynamicIp");
+                            String staticIp = (String) result.get("staticIp");
+                            String errMsg = (String) result.get("errMsg");
+                            log.info("TTFarmSetupNetwork 响应: code={}, message={}, dynamicIp={}, staticIp={}, errMsg={}",
+                                    code, message, dynamicIp, staticIp, errMsg);
+                            return code != null && code == 0;
+                        } else {
+                            log.error("TTFarmSetupNetwork 响应缺少responseStatus: phoneId={}, body={}", phoneId, responseBody);
+                            return false;
+                        }
+                    } else {
+                        log.error("TTFarmSetupNetwork API调用成功但响应体为空: phoneId={}, status={}", phoneId, statusCode);
+                        return false;
+                    }
+                } else {
+                    log.error("调用TTFarmSetupNetwork API服务器错误 ({}): phoneId={}, 响应: {}",
+                            statusCode, phoneId, responseBody);
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            log.error("调用TTFarmSetupNetwork API IO异常: phoneId={}", phoneId, e);
+            return false;
+        } catch (Exception e) {
+            log.error("调用TTFarmSetupNetwork API异常: phoneId={}", phoneId, e);
+            return false;
         }
     }
 
@@ -455,6 +653,18 @@ public class ApiService {
             log.error("查询主板机任务状态异常: taskId={}", taskId, e);
             return null;
         }
+    }
+
+    /**
+     * 获取连接池统计信息
+     * 用于监控连接池状态，便于调优
+     * 
+     * @return 连接池统计信息字符串
+     */
+    public String getConnectionPoolStats() {
+        ConnectionPool pool = okHttpClient.connectionPool();
+        return String.format("连接池统计: 空闲连接=%d, 总连接=%d", 
+                pool.idleConnectionCount(), pool.connectionCount());
     }
 }
 

@@ -36,7 +36,15 @@ public class TtRegisterTask {
     @TableField("task_type")
     @Column(name = "task_type", nullable = false, length = 50)
     private String taskType;
-    
+
+    /**
+     * 任务种类：REGISTER-注册任务, RETENTION-留存任务
+     * 默认为 REGISTER
+     */
+    @TableField("task_kind")
+    @Column(name = "task_kind", length = 20)
+    private String taskKind;
+
     /**
      * 设备类型：CLOUD_PHONE-云手机, MAINBOARD-主板机
      * 默认为 CLOUD_PHONE（云手机），用于区分不同的设备平台
@@ -128,6 +136,13 @@ public class TtRegisterTask {
     @TableField("adb_port")
     @Column(name = "adb_port", length = 10)
     private String adbPort;
+
+    /**
+     * Appium服务器地址（用于执行注册脚本）
+     */
+    @TableField("appium_server")
+    @Column(name = "appium_server", length = 50)
+    private String appiumServer;
 
     /**
      * 任务状态：PENDING-待执行, RUNNING-运行中, COMPLETED-已完成, FAILED-失败, STOPPED-已停止
