@@ -94,6 +94,48 @@ public class TtAccountRegister {
     private String ip;
 
     /**
+     * ResetPhone 返回的州/省（如 New York）
+     */
+    @TableField("state")
+    @Column(name = "state")
+    private String state;
+
+    /**
+     * ResetPhone 返回的城市（如 Poughkeepsie）
+     */
+    @TableField("city")
+    @Column(name = "city")
+    private String city;
+
+    /**
+     * ResetPhone 返回的设备型号（如 SC-51A）
+     */
+    @TableField("model")
+    @Column(name = "model")
+    private String model;
+
+    /**
+     * ResetPhone 返回的构建号（如 TP1A.220624.014）
+     */
+    @TableField("build_id")
+    @Column(name = "build_id")
+    private String buildId;
+
+    /**
+     * ResetPhone 返回的 UA
+     */
+    @TableField("user_agent")
+    @Column(name = "user_agent")
+    private String userAgent;
+
+    /**
+     * ResetPhone 返回的品牌（如 samsung）
+     */
+    @TableField("brand")
+    @Column(name = "brand")
+    private String brand;
+
+    /**
      * 国家代码（如 US、BR）
      */
     @TableField("country")
@@ -113,6 +155,13 @@ public class TtAccountRegister {
     @TableField("tiktok_version")
     @Column(name = "tiktok_version")
     private String tiktokVersion;
+
+    /**
+     * 换机使用的镜像路径（image_path）
+     */
+    @TableField("image_path")
+    @Column(name = "image_path")
+    private String imagePath;
 
     /**
      * 流量数据
@@ -215,5 +264,41 @@ public class TtAccountRegister {
     @TableField("is_sell_out")
     @Column(name = "is_sell_out")
     private Integer isSellOut;
+
+    /**
+     * 是否养号（nurture_status：0不养号 1养号）
+     */
+    @TableField("nurture_status")
+    @Column(name = "nurture_status")
+    private Integer nurtureStatus;
+
+    /**
+     * 是否开窗（shop_status：0未开窗 1已开窗）
+     */
+    @TableField("shop_status")
+    @Column(name = "shop_status")
+    private Integer shopStatus;
+
+    /**
+     * 新邮箱换绑是否成功（new_email_bind_success）
+     * 1=成功, 0=失败, null=未执行/未知
+     */
+    @TableField("new_email_bind_success")
+    @Column(name = "new_email_bind_success")
+    private Integer newEmailBindSuccess;
+
+    /**
+     * 换绑邮箱（new_email）
+     */
+    @TableField("new_email")
+    @Column(name = "new_email")
+    private String newEmail;
+
+    /**
+     * 账号备注（note）
+     */
+    @TableField("note")
+    @Column(name = "note")
+    private String note;
 }
 

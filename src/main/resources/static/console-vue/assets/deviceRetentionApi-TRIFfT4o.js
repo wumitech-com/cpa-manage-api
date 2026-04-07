@@ -1,0 +1,1 @@
+import{a as e}from"./index-BASZEy9q.js";async function t(t,n){let{data:r}=await e.post(`/api/tt-register/device/inspect`,{phoneId:t,gaid:n});return r}async function n(t,n,r){let i=new URLSearchParams;t&&i.set(`date`,t),i.set(`page`,String(n)),i.set(`size`,String(r));let{data:a}=await e.get(`/api/statistics/retention-records?${i.toString()}`);return a}export{t as n,n as t};

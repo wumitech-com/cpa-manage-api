@@ -303,156 +303,63 @@ public class StatisticsService {
      * 今日注册数(username not null)、今日2FA成功数、今日留存做2FA数、最近7天趋势
      * @param queryDate 可选，查询基准日，不传则默认今天
      */
+    public Map<String, Object> getDailyRegisterOverview(LocalDate queryDate) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            LocalDate today = queryDate != null ? queryDate : LocalDate.now();
+            Map<String, Object> data = buildDailyRegisterOverviewData(today);
+            result.put("success", true);
+            result.put("data", data);
+        } catch (Exception e) {
+            log.error("获取每日注册概览失败", e);
+            result.put("success", false);
+            result.put("message", "获取统计失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    public Map<String, Object> getDailyRegisterTrend(LocalDate queryDate) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            LocalDate today = queryDate != null ? queryDate : LocalDate.now();
+            Map<String, Object> data = new HashMap<>();
+            data.put("dailyTrend", buildDailyRegisterTrendData(today));
+            data.put("lastUpdateTime", LocalDateTime.now());
+            result.put("success", true);
+            result.put("data", data);
+        } catch (Exception e) {
+            log.error("获取每日注册趋势失败", e);
+            result.put("success", false);
+            result.put("message", "获取统计失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    public Map<String, Object> getDailyRegisterDetail(LocalDate queryDate) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            LocalDate today = queryDate != null ? queryDate : LocalDate.now();
+            Map<String, Object> data = new HashMap<>();
+            data.put("twofaDetail", buildDailyRegisterDetailData(today));
+            data.put("lastUpdateTime", LocalDateTime.now());
+            result.put("success", true);
+            result.put("data", data);
+        } catch (Exception e) {
+            log.error("获取每日注册详情失败", e);
+            result.put("success", false);
+            result.put("message", "获取统计失败: " + e.getMessage());
+        }
+        return result;
+    }
+
     public Map<String, Object> getDailyRegisterStatistics(LocalDate queryDate) {
         Map<String, Object> result = new HashMap<>();
         
         try {
             LocalDate today = queryDate != null ? queryDate : LocalDate.now();
-            LocalDateTime todayStart = today.atStartOfDay();
-            LocalDateTime todayEnd = today.atTime(23, 59, 59);
-            LocalDateTime weekStart = today.minusDays(6).atStartOfDay();
-            
-            // 今日：注册数、2FA成功数、留存做2FA数
-            long todayRegister = ttAccountRegisterRepository.countTodayRegister(todayStart, todayEnd);
-            long today2faSuccess = ttAccountRegisterRepository.countToday2faSuccess(todayStart, todayEnd);
-            long todayRegisterSuccess = ttAccountRegisterRepository.countTodayRegisterSuccess(todayStart, todayEnd);
-            long todayNeedRetention = ttAccountRegisterRepository.countTodayNeedRetention(todayStart, todayEnd);
-            double todayRegisterSuccessRate = todayRegister > 0
-                    ? Math.round((double) todayRegisterSuccess / todayRegister * 10000.0) / 100.0
-                    : 0;
-            double today2faSetupSuccessRate = todayRegisterSuccess > 0
-                    ? Math.round((double) today2faSuccess / todayRegisterSuccess * 10000.0) / 100.0
-                    : 0;
-            
-            // 最近7天趋势（注册 / 2FA / 留存 / 流量）
-            List<Map<String, Object>> dailyTrend = new ArrayList<>();
-            List<Map<String, Object>> rawTrend = ttAccountRegisterRepository.countDailyStats(weekStart);
-            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            
-            for (int i = 6; i >= 0; i--) {
-                LocalDate d = today.minusDays(i);
-                String dateStr = d.format(fmt);
-                Map<String, Object> dayData = new HashMap<>();
-                dayData.put("date", dateStr);
-                dayData.put("label", i == 0 ? "今天" : (i == 1 ? "昨天" : d.getMonthValue() + "/" + d.getDayOfMonth()));
-                
-                Map<String, Object> found = rawTrend.stream()
-                    .filter(m -> {
-                        Object v = m.get("stat_date");
-                        if (v == null) v = m.get("statDate");
-                        return dateStr.equals(String.valueOf(v));
-                    })
-                    .findFirst().orElse(null);
-                
-                long reg = found != null ? getLong(found, "register_cnt") : 0;
-                long twofa = found != null ? getLong(found, "twofa_cnt") : 0;
-                long ret = found != null ? getLong(found, "retention_cnt") : 0;
-                double rate = reg > 0 ? Math.round((double) twofa / reg * 10000.0) / 100.0 : 0;
-                
-                dayData.put("register", reg);
-                dayData.put("twofa", twofa);
-                dayData.put("retention", ret);
-                dayData.put("twofaRate", rate);
-
-                // 当天流量统计：按当天 2FA 成功账号的 trafficData 汇总
-                LocalDateTime dStart = d.atStartOfDay();
-                LocalDateTime dEnd = d.atTime(23, 59, 59);
-                List<com.cpa.entity.TtAccountRegister> dayTwofaList =
-                        ttAccountRegisterRepository.list2faSuccessByDate(dStart, dEnd);
-                double dayTraffic = 0.0;
-                if (dayTwofaList != null) {
-                    for (com.cpa.entity.TtAccountRegister ar : dayTwofaList) {
-                        dayTraffic += parseTraffic(ar.getTrafficData());
-                    }
-                }
-                double dayAvg = twofa > 0 ? dayTraffic / twofa : 0.0;
-                dayData.put("trafficTotal", Math.round(dayTraffic * 100.0) / 100.0);
-                dayData.put("trafficAvg", Math.round(dayAvg * 100.0) / 100.0);
-                dailyTrend.add(dayData);
-            }
-
-            // 今日 2FA 成功账号的详情分布
-            LocalDateTime twofaStart = today.atStartOfDay();
-            LocalDateTime twofaEnd = today.atTime(23, 59, 59);
-            List<com.cpa.entity.TtAccountRegister> twofaList =
-                    ttAccountRegisterRepository.list2faSuccessByDate(twofaStart, twofaEnd);
-
-            Map<String, Long> androidDist = new HashMap<>();
-            Map<String, Long> behaviorDist = new HashMap<>();
-            Map<String, Long> tiktokDist = new HashMap<>();
-            Map<String, Long> countryDist = new HashMap<>();
-            Map<String, Long> phoneServerIpDist = new HashMap<>();
-            double totalTraffic = 0.0;
-
-            for (com.cpa.entity.TtAccountRegister ar : twofaList) {
-                inc(androidDist, normalize(ar.getAndroidVersion(), "未知"));
-                // 按数据库原始行为值统计，不再压缩成 skip/normal 两类
-                inc(behaviorDist, normalize(ar.getBehavior(), "未知"));
-                inc(tiktokDist, normalize(ar.getTiktokVersion(), "未知"));
-                inc(countryDist, normalize(ar.getCountry(), "未知"));
-                inc(phoneServerIpDist, normalize(ar.getPhoneServerIp(), "未知"));
-                totalTraffic += parseTraffic(ar.getTrafficData());
-            }
-
-            Map<String, Object> twofaDetail = new HashMap<>();
-            twofaDetail.put("total2faSuccess", today2faSuccess);
-            twofaDetail.put("androidVersionDist", toDistList(androidDist));
-            twofaDetail.put("behaviorDist", toDistList(behaviorDist));
-            twofaDetail.put("tiktokVersionDist", toDistList(tiktokDist));
-            twofaDetail.put("countryDist", toDistList(countryDist));
-            twofaDetail.put("phoneServerIpDist", toDistList(phoneServerIpDist));
-            twofaDetail.put("trafficTotal", Math.round(totalTraffic * 100.0) / 100.0);
-            double avg = today2faSuccess > 0 ? totalTraffic / today2faSuccess : 0.0;
-            twofaDetail.put("trafficAvgPerSuccess", Math.round(avg * 100.0) / 100.0);
-
-            // 服务器每小时 2FA 成功明细
-            List<Map<String, Object>> byServerHour = ttAccountRegisterRepository.count2faByServerAndHour(twofaStart, twofaEnd);
-            Map<String, long[]> hourlyMap = new LinkedHashMap<>();
-            for (Map<String, Object> row : byServerHour) {
-                String serverIp = normalize(String.valueOf(row.get("server_ip")), "未知");
-                int hour = (int) getLong(row, "hour_of_day");
-                long cnt = getLong(row, "cnt");
-                if (hour < 0 || hour > 23) {
-                    continue;
-                }
-                long[] arr = hourlyMap.computeIfAbsent(serverIp, k -> new long[24]);
-                arr[hour] += cnt;
-            }
-            List<Map<String, Object>> serverHourlyList = new ArrayList<>();
-            for (Map.Entry<String, long[]> entry : hourlyMap.entrySet()) {
-                String serverIp = entry.getKey();
-                long[] arr = entry.getValue();
-                long totalCnt = 0;
-                List<Map<String, Object>> hourly = new ArrayList<>();
-                for (int h = 0; h < 24; h++) {
-                    long c = arr[h];
-                    totalCnt += c;
-                    Map<String, Object> hourItem = new HashMap<>();
-                    hourItem.put("hour", String.format("%02d", h));
-                    hourItem.put("count", c);
-                    hourly.add(hourItem);
-                }
-                Map<String, Object> item = new HashMap<>();
-                item.put("serverIp", serverIp);
-                item.put("total", totalCnt);
-                item.put("hourly", hourly);
-                serverHourlyList.add(item);
-            }
-            serverHourlyList.sort((a, b) -> Long.compare(
-                    ((Number) b.getOrDefault("total", 0L)).longValue(),
-                    ((Number) a.getOrDefault("total", 0L)).longValue()
-            ));
-            twofaDetail.put("serverHourly2fa", serverHourlyList);
-
-            Map<String, Object> data = new HashMap<>();
-            data.put("todayRegister", todayRegister);
-            data.put("todayRegisterSuccess", todayRegisterSuccess);
-            data.put("today2faSuccess", today2faSuccess);
-            data.put("todayNeedRetention", todayNeedRetention);
-            data.put("todayRegisterSuccessRate", todayRegisterSuccessRate);
-            data.put("today2faSetupSuccessRate", today2faSetupSuccessRate);
-            data.put("dailyTrend", dailyTrend);
-            data.put("twofaDetail", twofaDetail);
+            Map<String, Object> data = buildDailyRegisterOverviewData(today);
+            data.put("dailyTrend", buildDailyRegisterTrendData(today));
+            data.put("twofaDetail", buildDailyRegisterDetailData(today));
             data.put("lastUpdateTime", LocalDateTime.now());
             
             result.put("success", true);
@@ -465,6 +372,225 @@ public class StatisticsService {
         }
         
         return result;
+    }
+
+    private Map<String, Object> buildDailyRegisterOverviewData(LocalDate today) {
+        LocalDateTime todayStart = today.atStartOfDay();
+        LocalDateTime todayEnd = today.atTime(23, 59, 59);
+        long todayRegister = ttAccountRegisterRepository.countTodayRegister(todayStart, todayEnd);
+        long today2faSuccess = ttAccountRegisterRepository.countToday2faSuccess(todayStart, todayEnd);
+        long todayRegisterSuccess = ttAccountRegisterRepository.countTodayRegisterSuccess(todayStart, todayEnd);
+        long todayNeedRetention = ttAccountRegisterRepository.countTodayNeedRetention(todayStart, todayEnd);
+        double todayRegisterSuccessRate = todayRegister > 0
+                ? Math.round((double) todayRegisterSuccess / todayRegister * 10000.0) / 100.0
+                : 0;
+        double today2faSetupSuccessRate = todayRegisterSuccess > 0
+                ? Math.round((double) today2faSuccess / todayRegisterSuccess * 10000.0) / 100.0
+                : 0;
+        Map<String, Object> data = new HashMap<>();
+        data.put("todayRegister", todayRegister);
+        data.put("todayRegisterSuccess", todayRegisterSuccess);
+        data.put("today2faSuccess", today2faSuccess);
+        data.put("todayNeedRetention", todayNeedRetention);
+        data.put("todayRegisterSuccessRate", todayRegisterSuccessRate);
+        data.put("today2faSetupSuccessRate", today2faSetupSuccessRate);
+        data.put("lastUpdateTime", LocalDateTime.now());
+        return data;
+    }
+
+    private List<Map<String, Object>> buildDailyRegisterTrendData(LocalDate today) {
+        LocalDateTime weekStart = today.minusDays(6).atStartOfDay();
+        List<Map<String, Object>> dailyTrend = new ArrayList<>();
+        List<Map<String, Object>> rawTrend = ttAccountRegisterRepository.countDailyStats(weekStart);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        for (int i = 6; i >= 0; i--) {
+            LocalDate d = today.minusDays(i);
+            String dateStr = d.format(fmt);
+            Map<String, Object> dayData = new HashMap<>();
+            dayData.put("date", dateStr);
+            dayData.put("label", i == 0 ? "今天" : (i == 1 ? "昨天" : d.getMonthValue() + "/" + d.getDayOfMonth()));
+
+            Map<String, Object> found = rawTrend.stream()
+                    .filter(m -> {
+                        Object v = m.get("stat_date");
+                        if (v == null) v = m.get("statDate");
+                        return dateStr.equals(String.valueOf(v));
+                    })
+                    .findFirst().orElse(null);
+
+            long reg = found != null ? getLong(found, "register_cnt") : 0;
+            long twofa = found != null ? getLong(found, "twofa_cnt") : 0;
+            long ret = found != null ? getLong(found, "retention_cnt") : 0;
+            double rate = reg > 0 ? Math.round((double) twofa / reg * 10000.0) / 100.0 : 0;
+            dayData.put("register", reg);
+            dayData.put("twofa", twofa);
+            dayData.put("retention", ret);
+            dayData.put("twofaRate", rate);
+
+            LocalDateTime dStart = d.atStartOfDay();
+            LocalDateTime dEnd = d.atTime(23, 59, 59);
+            List<com.cpa.entity.TtAccountRegister> dayTwofaList =
+                    ttAccountRegisterRepository.list2faSuccessByDate(dStart, dEnd);
+            double dayTraffic = 0.0;
+            if (dayTwofaList != null) {
+                for (com.cpa.entity.TtAccountRegister ar : dayTwofaList) {
+                    dayTraffic += parseTraffic(ar.getTrafficData());
+                }
+            }
+            double dayAvg = twofa > 0 ? dayTraffic / twofa : 0.0;
+            dayData.put("trafficTotal", Math.round(dayTraffic * 100.0) / 100.0);
+            dayData.put("trafficAvg", Math.round(dayAvg * 100.0) / 100.0);
+            dailyTrend.add(dayData);
+        }
+        return dailyTrend;
+    }
+
+    private Map<String, Object> buildDailyRegisterDetailData(LocalDate today) {
+        LocalDateTime twofaStart = today.atStartOfDay();
+        LocalDateTime twofaEnd = today.atTime(23, 59, 59);
+        List<com.cpa.entity.TtAccountRegister> twofaList =
+                ttAccountRegisterRepository.list2faSuccessByDate(twofaStart, twofaEnd);
+        long today2faSuccess = ttAccountRegisterRepository.countToday2faSuccess(twofaStart, twofaEnd);
+
+        Map<String, Long> androidDist = new HashMap<>();
+        Map<String, Long> behaviorDist = new HashMap<>();
+        Map<String, Long> tiktokDist = new HashMap<>();
+        Map<String, Long> countryDist = new HashMap<>();
+        Map<String, Long> phoneServerIpDist = new HashMap<>();
+        double totalTraffic = 0.0;
+
+        for (com.cpa.entity.TtAccountRegister ar : twofaList) {
+            inc(androidDist, normalize(ar.getAndroidVersion(), "未知"));
+            inc(behaviorDist, normalize(ar.getBehavior(), "未知"));
+            inc(tiktokDist, normalize(ar.getTiktokVersion(), "未知"));
+            inc(countryDist, normalize(ar.getCountry(), "未知"));
+            inc(phoneServerIpDist, normalize(ar.getPhoneServerIp(), "未知"));
+            totalTraffic += parseTraffic(ar.getTrafficData());
+        }
+
+        Map<String, Object> twofaDetail = new HashMap<>();
+        twofaDetail.put("total2faSuccess", today2faSuccess);
+        twofaDetail.put("androidVersionDist", toDistList(androidDist));
+        twofaDetail.put("behaviorDist", toDistList(behaviorDist));
+        twofaDetail.put("tiktokVersionDist", toDistList(tiktokDist));
+        twofaDetail.put("countryDist", toDistList(countryDist));
+        twofaDetail.put("phoneServerIpDist", toDistList(phoneServerIpDist));
+        twofaDetail.put("trafficTotal", Math.round(totalTraffic * 100.0) / 100.0);
+        double avg = today2faSuccess > 0 ? totalTraffic / today2faSuccess : 0.0;
+        twofaDetail.put("trafficAvgPerSuccess", Math.round(avg * 100.0) / 100.0);
+
+        // 当天全量流量：trafficData 非空的全部账号（不限定 2FA 成功）
+        List<String> allTrafficRows = ttAccountRegisterRepository.listTrafficDataByDate(twofaStart, twofaEnd);
+        double trafficTotalAll = 0.0;
+        if (allTrafficRows != null) {
+            for (String td : allTrafficRows) {
+                trafficTotalAll += parseTraffic(td);
+            }
+        }
+        twofaDetail.put("trafficTotalAll", Math.round(trafficTotalAll * 100.0) / 100.0);
+
+        List<Map<String, Object>> byServerHour = ttAccountRegisterRepository.count2faByServerAndHour(twofaStart, twofaEnd);
+        Map<String, long[]> hourlyMap = new LinkedHashMap<>();
+        for (Map<String, Object> row : byServerHour) {
+            String serverIp = normalize(String.valueOf(row.get("server_ip")), "未知");
+            int hour = (int) getLong(row, "hour_of_day");
+            long cnt = getLong(row, "cnt");
+            if (hour < 0 || hour > 23) {
+                continue;
+            }
+            long[] arr = hourlyMap.computeIfAbsent(serverIp, k -> new long[24]);
+            arr[hour] += cnt;
+        }
+        List<Map<String, Object>> serverHourlyList = new ArrayList<>();
+        for (Map.Entry<String, long[]> entry : hourlyMap.entrySet()) {
+            String serverIp = entry.getKey();
+            long[] arr = entry.getValue();
+            long totalCnt = 0;
+            List<Map<String, Object>> hourly = new ArrayList<>();
+            for (int h = 0; h < 24; h++) {
+                long c = arr[h];
+                totalCnt += c;
+                Map<String, Object> hourItem = new HashMap<>();
+                hourItem.put("hour", String.format("%02d", h));
+                hourItem.put("count", c);
+                hourly.add(hourItem);
+            }
+            Map<String, Object> item = new HashMap<>();
+            item.put("serverIp", serverIp);
+            item.put("total", totalCnt);
+            item.put("hourly", hourly);
+            serverHourlyList.add(item);
+        }
+        serverHourlyList.sort((a, b) -> Long.compare(
+                ((Number) b.getOrDefault("total", 0L)).longValue(),
+                ((Number) a.getOrDefault("total", 0L)).longValue()
+        ));
+        twofaDetail.put("serverHourly2fa", serverHourlyList);
+
+        // 注册成功按服务器分时段（用于总览页可查列表）
+        List<Map<String, Object>> registerByServerHour =
+                ttAccountRegisterRepository.countRegisterSuccessByServerAndHour(twofaStart, twofaEnd);
+        // 注册尝试总数（同一口径：created_at 在区间内；用于计算“注册成功率”）
+        List<Map<String, Object>> createdByServerHour =
+                ttAccountRegisterRepository.countCreatedByServerAndHour(twofaStart, twofaEnd);
+
+        Map<String, long[]> createdHourlyMap = new LinkedHashMap<>();
+        for (Map<String, Object> row : createdByServerHour) {
+            String serverIp = normalize(String.valueOf(row.get("server_ip")), "未知");
+            int hour = (int) getLong(row, "hour_of_day");
+            long cnt = getLong(row, "cnt");
+            if (hour < 0 || hour > 23) {
+                continue;
+            }
+            long[] arr = createdHourlyMap.computeIfAbsent(serverIp, k -> new long[24]);
+            arr[hour] += cnt;
+        }
+        Map<String, Long> createdTotalByServer = new HashMap<>();
+        for (Map.Entry<String, long[]> entry : createdHourlyMap.entrySet()) {
+            long total = 0L;
+            long[] arr = entry.getValue();
+            if (arr != null) {
+                for (int h = 0; h < 24; h++) total += arr[h];
+            }
+            createdTotalByServer.put(entry.getKey(), total);
+        }
+
+        Map<String, long[]> registerHourlyMap = new LinkedHashMap<>();
+        for (Map<String, Object> row : registerByServerHour) {
+            String serverIp = normalize(String.valueOf(row.get("server_ip")), "未知");
+            int hour = (int) getLong(row, "hour_of_day");
+            long cnt = getLong(row, "cnt");
+            if (hour < 0 || hour > 23) {
+                continue;
+            }
+            long[] arr = registerHourlyMap.computeIfAbsent(serverIp, k -> new long[24]);
+            arr[hour] += cnt;
+        }
+        List<Map<String, Object>> registerServerHourlyList = new ArrayList<>();
+        for (Map.Entry<String, long[]> entry : registerHourlyMap.entrySet()) {
+            String serverIp = entry.getKey();
+            long[] arr = entry.getValue();
+            long totalCnt = 0;
+            long createdTotal = createdTotalByServer.getOrDefault(serverIp, 0L);
+            Map<String, Object> item = new HashMap<>();
+            item.put("serverIp", serverIp);
+            for (int h = 0; h < 24; h++) {
+                long c = arr[h];
+                totalCnt += c;
+                item.put(String.format("h%02d", h), c);
+            }
+            item.put("total", totalCnt);
+            item.put("createdTotal", createdTotal);
+            double rate = createdTotal > 0 ? Math.round((double) totalCnt / createdTotal * 10000.0) / 100.0 : 0.0;
+            item.put("registerSuccessRate", rate);
+            registerServerHourlyList.add(item);
+        }
+        registerServerHourlyList.sort((a, b) -> Long.compare(
+                ((Number) b.getOrDefault("total", 0L)).longValue(),
+                ((Number) a.getOrDefault("total", 0L)).longValue()
+        ));
+        twofaDetail.put("serverHourlyRegister", registerServerHourlyList);
+        return twofaDetail;
     }
     
     private long getLong(Map<String, Object> m, String key) {
@@ -692,6 +818,57 @@ public class StatisticsService {
             log.error("获取封号率趋势统计失败", e);
             result.put("success", false);
             result.put("message", "获取封号率趋势统计失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 封号率：按日期返回每天的 total/blocked/blockRate
+     * 用于前端“回溯周期矩阵”展示（比如看每个日期往前 3/7/14/21/30 天的封号率）。
+     *
+     * 注意：这里的 total/blocked 均使用当前接口逻辑：
+     * - total：该日 created_at 且 is_2fa_setup_success=1
+     * - blocked：该日 created_at 且 is_2fa_setup_success=1 且 block_time IS NOT NULL
+     */
+    public Map<String, Object> getBlockRateDaily(LocalDate queryDate, int days) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            LocalDate today = queryDate != null ? queryDate : LocalDate.now();
+            int safeDays = days <= 0 ? 40 : days;
+            DateTimeFormatter iso = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+            List<Map<String, Object>> daily = new ArrayList<>();
+            // 生成区间：[today-(safeDays-1) ... today]
+            for (int i = safeDays - 1; i >= 0; i--) {
+                LocalDate baseDate = today.minusDays(i);
+                LocalDateTime start = baseDate.atStartOfDay();
+                LocalDateTime end = baseDate.atTime(23, 59, 59);
+
+                long total = ttAccountRegisterRepository.count2faSuccessByDate(start, end);
+                long blocked = ttAccountRegisterRepository.countBlockedByDate(start, end);
+                double rate = total > 0 ? (double) blocked / total * 100D : 0D;
+                // 保留更高精度，便于前端矩阵显示对比
+                rate = Math.round(rate * 1_000_000_000D) / 1_000_000_000D;
+
+                Map<String, Object> item = new HashMap<>();
+                item.put("date", baseDate.format(iso));
+                item.put("total", total);
+                item.put("blocked", blocked);
+                item.put("blockRate", rate);
+                daily.add(item);
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("queryDate", today.format(iso));
+            data.put("days", safeDays);
+            data.put("daily", daily);
+
+            result.put("success", true);
+            result.put("data", data);
+        } catch (Exception e) {
+            log.error("获取封号率每日数据失败", e);
+            result.put("success", false);
+            result.put("message", "获取封号率每日数据失败: " + e.getMessage());
         }
         return result;
     }

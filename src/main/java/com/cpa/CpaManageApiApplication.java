@@ -1,5 +1,6 @@
 package com.cpa;
 
+import com.cpa.config.CpaGaidPoolProperties;
 import com.cpa.config.SshProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -11,7 +12,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication
 @EnableScheduling
-@EnableConfigurationProperties(SshProperties.class)
+@EnableConfigurationProperties({SshProperties.class, CpaGaidPoolProperties.class})
 public class CpaManageApiApplication {
 
     public static void main(String[] args) {

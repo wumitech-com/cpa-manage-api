@@ -1,0 +1,80 @@
+:root {
+  --bg-primary: #f4f7fb;
+  --bg-secondary: #eef3f9;
+  --panel-bg: #ffffff;
+  --panel-border: #d8e2f0;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: #dbeafe;
+  --success: #15803d;
+  --warning: #c2410c;
+  --error: #b91c1c;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  background: linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%) !important;
+  color: var(--text-primary) !important;
+}
+
+.app-shell,
+.page-card,
+.panel,
+.panel-card,
+.table-wrap,
+.table-container,
+.metrics-card {
+  background: var(--panel-bg) !important;
+  border-color: var(--panel-border) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.toolbar,
+.filter-row,
+.am-filter-row-main,
+.am-filter-row-sub,
+.wm-filter-row-main,
+.wm-filter-row-sub {
+  background: var(--bg-secondary) !important;
+  border-color: var(--panel-border) !important;
+}
+
+button,
+.btn,
+.task-btn,
+.am-btn,
+.wm-btn {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #fff !important;
+}
+
+button:hover,
+.btn:hover,
+.task-btn:hover,
+.am-btn:hover,
+.wm-btn:hover {
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+}
+
+input,
+select,
+textarea {
+  background: #fff !important;
+  border: 1px solid var(--panel-border) !important;
+  color: var(--text-primary) !important;
+}
+
+th {
+  background: #f8fafc !important;
+  color: var(--text-secondary) !important;
+}
+
+tr:nth-child(even) td {
+  background: #fbfdff !important;
+}

@@ -1,4 +1,4 @@
-FROM openjdk:17-slim
+FROM eclipse-temurin:17-jdk-jammy
 
 # 添加国内镜像源并设置时区为北京时间
 RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/sources.list \

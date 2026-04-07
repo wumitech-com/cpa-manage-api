@@ -16,11 +16,15 @@ public class SshRateLimiter {
     // 每个服务器的限流信号量（key: serverIp, value: Semaphore）
     private static final ConcurrentHashMap<String, Semaphore> rateLimiters = new ConcurrentHashMap<>();
     
-    // 默认每个服务器最多同时执行50个SSH命令（增加并发数以支持更多设备并行注册）
-    private static final int DEFAULT_MAX_CONCURRENT_COMMANDS = 50;
+    // 默认每个服务器最多同时执行SSH命令数
+    // 支持通过 -Dssh.rate.maxConcurrent 或环境变量 SSH_RATE_MAX_CONCURRENT 覆盖
+    private static final int DEFAULT_MAX_CONCURRENT_COMMANDS = readPositiveInt(
+            "ssh.rate.maxConcurrent", "SSH_RATE_MAX_CONCURRENT", 200);
     
     // 获取信号量的超时时间（秒）
-    private static final int ACQUIRE_TIMEOUT_SECONDS = 30;
+    // 支持通过 -Dssh.rate.acquireTimeoutSeconds 或环境变量 SSH_RATE_ACQUIRE_TIMEOUT_SECONDS 覆盖
+    private static final int ACQUIRE_TIMEOUT_SECONDS = readPositiveInt(
+            "ssh.rate.acquireTimeoutSeconds", "SSH_RATE_ACQUIRE_TIMEOUT_SECONDS", 180);
     
     /**
      * 获取指定服务器的限流信号量
@@ -28,6 +32,26 @@ public class SshRateLimiter {
     private static Semaphore getSemaphore(String serverIp) {
         return rateLimiters.computeIfAbsent(serverIp, 
             k -> new Semaphore(DEFAULT_MAX_CONCURRENT_COMMANDS, true));
+    }
+
+    /**
+     * 从系统属性/环境变量读取正整数配置
+     */
+    private static int readPositiveInt(String systemProperty, String envName, int defaultValue) {
+        String raw = System.getProperty(systemProperty);
+        if (raw == null || raw.trim().isEmpty()) {
+            raw = System.getenv(envName);
+        }
+        if (raw == null || raw.trim().isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            int value = Integer.parseInt(raw.trim());
+            return value > 0 ? value : defaultValue;
+        } catch (NumberFormatException e) {
+            log.warn("无效配置 {} / {} = {}, 使用默认值 {}", systemProperty, envName, raw, defaultValue);
+            return defaultValue;
+        }
     }
     
     /**

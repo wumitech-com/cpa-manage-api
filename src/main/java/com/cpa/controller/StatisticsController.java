@@ -81,15 +81,26 @@ public class StatisticsController {
     @GetMapping("/daily-register")
     public Map<String, Object> getDailyRegisterStatistics(@RequestParam(required = false) String date) {
         log.info("获取每日注册统计, date={}", date);
-        LocalDate queryDate = null;
-        if (date != null && !date.isEmpty()) {
-            try {
-                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
-            } catch (Exception e) {
-                log.warn("解析日期失败: {}", date);
-            }
-        }
+        LocalDate queryDate = parseDate(date);
         return statisticsService.getDailyRegisterStatistics(queryDate);
+    }
+
+    @GetMapping("/daily-register/overview")
+    public Map<String, Object> getDailyRegisterOverview(@RequestParam(required = false) String date) {
+        log.info("获取每日注册概览, date={}", date);
+        return statisticsService.getDailyRegisterOverview(parseDate(date));
+    }
+
+    @GetMapping("/daily-register/trend")
+    public Map<String, Object> getDailyRegisterTrend(@RequestParam(required = false) String date) {
+        log.info("获取每日注册趋势, date={}", date);
+        return statisticsService.getDailyRegisterTrend(parseDate(date));
+    }
+
+    @GetMapping("/daily-register/detail")
+    public Map<String, Object> getDailyRegisterDetail(@RequestParam(required = false) String date) {
+        log.info("获取每日注册详情, date={}", date);
+        return statisticsService.getDailyRegisterDetail(parseDate(date));
     }
 
     /**
@@ -99,14 +110,7 @@ public class StatisticsController {
     @GetMapping("/block-rate")
     public Map<String, Object> getBlockRateStatistics(@RequestParam(required = false) String date) {
         log.info("获取封号率统计, date={}", date);
-        LocalDate queryDate = null;
-        if (date != null && !date.isEmpty()) {
-            try {
-                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
-            } catch (Exception e) {
-                log.warn("解析日期失败: {}", date);
-            }
-        }
+        LocalDate queryDate = parseDate(date);
         return statisticsService.getBlockRateStatistics(queryDate);
     }
 
@@ -117,15 +121,21 @@ public class StatisticsController {
     @GetMapping("/block-rate-trend")
     public Map<String, Object> getBlockRateTrend(@RequestParam(required = false) String date) {
         log.info("获取封号率趋势统计, date={}", date);
-        LocalDate queryDate = null;
-        if (date != null && !date.isEmpty()) {
-            try {
-                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
-            } catch (Exception e) {
-                log.warn("解析日期失败: {}", date);
-            }
-        }
+        LocalDate queryDate = parseDate(date);
         return statisticsService.getBlockRateTrend(queryDate);
+    }
+
+    /**
+     * 获取封号率每日数据（用于回溯矩阵）
+     * @param date 可选，查询基准日 yyyy-MM-dd，不传则默认今天
+     * @param days 需要返回的天数（包含基准日，向前回溯）
+     */
+    @GetMapping("/block-rate-daily")
+    public Map<String, Object> getBlockRateDaily(@RequestParam(required = false) String date,
+                                                   @RequestParam(required = false, defaultValue = "40") int days) {
+        log.info("获取封号率每日数据, date={}, days={}", date, days);
+        LocalDate queryDate = parseDate(date);
+        return statisticsService.getBlockRateDaily(queryDate, days);
     }
 
     /**
@@ -136,14 +146,7 @@ public class StatisticsController {
                                                    @RequestParam(defaultValue = "1") int page,
                                                    @RequestParam(defaultValue = "20") int size) {
         log.info("获取留存日记记录, date={}, page={}, size={}", date, page, size);
-        LocalDate queryDate = null;
-        if (date != null && !date.isEmpty()) {
-            try {
-                queryDate = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
-            } catch (Exception e) {
-                log.warn("解析日期失败: {}", date);
-            }
-        }
+        LocalDate queryDate = parseDate(date);
         if (page < 1) {
             page = 1;
         }
@@ -151,5 +154,17 @@ public class StatisticsController {
             size = 20;
         }
         return statisticsService.getRetentionRecords(queryDate, page, size);
+    }
+
+    private LocalDate parseDate(String date) {
+        if (date == null || date.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (Exception e) {
+            log.warn("解析日期失败: {}", date);
+            return null;
+        }
     }
 }

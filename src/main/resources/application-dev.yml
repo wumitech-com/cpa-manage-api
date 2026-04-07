@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:13306/tt?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    url: "jdbc:mysql://localhost:3306/tt?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false"
     username: root
-    password: Wumitech
+    password: wumitech
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   redis:

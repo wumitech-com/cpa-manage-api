@@ -25,6 +25,20 @@ public interface TtAccountRegisterRepository extends BaseMapper<TtAccountRegiste
     long countTodayRegister(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     /**
+     * 区间内新增注册：android_version = '13'（对应业务 SDK API 33，与 proportion 里第 4 段一致）
+     */
+    @Select("SELECT COUNT(*) FROM tt_account_register " +
+            "WHERE created_at >= #{start} AND created_at <= #{end} AND android_version = '13'")
+    long countCreatedInRangeForSdkApi33(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    /**
+     * 区间内新增注册：android_version = '14'（对应业务 SDK API 34，与 proportion 里第 5 段一致）
+     */
+    @Select("SELECT COUNT(*) FROM tt_account_register " +
+            "WHERE created_at >= #{start} AND created_at <= #{end} AND android_version = '14'")
+    long countCreatedInRangeForSdkApi34(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    /**
      * 今日2FA设置成功数：is_2fa_setup_success = 1
      */
     @Select("SELECT COUNT(*) FROM tt_account_register " +
@@ -94,6 +108,15 @@ public interface TtAccountRegisterRepository extends BaseMapper<TtAccountRegiste
                                                  @Param("end") LocalDateTime end);
 
     /**
+     * 查询指定日期内 trafficData 非空的流量字段（用于全量流量统计）
+     */
+    @Select("SELECT trafficData FROM tt_account_register " +
+            "WHERE created_at >= #{start} AND created_at <= #{end} " +
+            "AND trafficData IS NOT NULL AND TRIM(trafficData) <> ''")
+    List<String> listTrafficDataByDate(@Param("start") LocalDateTime start,
+                                       @Param("end") LocalDateTime end);
+
+    /**
      * 指定日期内按服务器+小时统计 2FA 成功数
      */
     @Select("SELECT phone_server_ip AS server_ip, HOUR(created_at) AS hour_of_day, COUNT(*) AS cnt " +
@@ -105,6 +128,32 @@ public interface TtAccountRegisterRepository extends BaseMapper<TtAccountRegiste
             "ORDER BY phone_server_ip ASC, hour_of_day ASC")
     List<Map<String, Object>> count2faByServerAndHour(@Param("start") LocalDateTime start,
                                                        @Param("end") LocalDateTime end);
+
+    /**
+     * 指定日期内按服务器+小时统计注册成功数
+     */
+    @Select("SELECT phone_server_ip AS server_ip, HOUR(created_at) AS hour_of_day, COUNT(*) AS cnt " +
+            "FROM tt_account_register " +
+            "WHERE created_at >= #{start} AND created_at <= #{end} " +
+            "AND register_success = 1 " +
+            "AND phone_server_ip IS NOT NULL AND phone_server_ip <> '' " +
+            "GROUP BY phone_server_ip, HOUR(created_at) " +
+            "ORDER BY phone_server_ip ASC, hour_of_day ASC")
+    List<Map<String, Object>> countRegisterSuccessByServerAndHour(@Param("start") LocalDateTime start,
+                                                                   @Param("end") LocalDateTime end);
+
+    /**
+     * 指定日期内按服务器+小时统计“注册尝试总数”（即 created_at 在范围内的记录总数）
+     * 用于计算注册成功率：register_success / created_total
+     */
+    @Select("SELECT phone_server_ip AS server_ip, HOUR(created_at) AS hour_of_day, COUNT(*) AS cnt " +
+            "FROM tt_account_register " +
+            "WHERE created_at >= #{start} AND created_at <= #{end} " +
+            "AND phone_server_ip IS NOT NULL AND phone_server_ip <> '' " +
+            "GROUP BY phone_server_ip, HOUR(created_at) " +
+            "ORDER BY phone_server_ip ASC, hour_of_day ASC")
+    List<Map<String, Object>> countCreatedByServerAndHour(@Param("start") LocalDateTime start,
+                                                           @Param("end") LocalDateTime end);
 
     /**
      * 查询指定日期内 2FA 设置成功且已封号的账号列表（block_time IS NOT NULL）
@@ -141,5 +190,23 @@ public interface TtAccountRegisterRepository extends BaseMapper<TtAccountRegiste
      */
     @Update("UPDATE tt_account_register SET need_retention = #{needRetention} WHERE id = #{id}")
     int updateNeedRetention(@Param("id") Long id, @Param("needRetention") int needRetention);
+
+    /**
+     * 按 username 查找账号（导入时 upsert 匹配依据）
+     */
+    @Select("SELECT * FROM tt_account_register WHERE username = #{username} LIMIT 1")
+    TtAccountRegister findByUsername(@Param("username") String username);
+
+    /**
+     * 按 gaid 查最新记录（用于设备恢复查看）
+     */
+    @Select("SELECT * FROM tt_account_register WHERE gaid = #{gaid} ORDER BY created_at DESC LIMIT 1")
+    TtAccountRegister findLatestByGaid(@Param("gaid") String gaid);
+
+    /**
+     * 按 phone_id 查最新记录（用于获取目标云手机 server_ip）
+     */
+    @Select("SELECT * FROM tt_account_register WHERE phone_id = #{phoneId} ORDER BY created_at DESC LIMIT 1")
+    TtAccountRegister findLatestByPhoneId(@Param("phoneId") String phoneId);
 }
 

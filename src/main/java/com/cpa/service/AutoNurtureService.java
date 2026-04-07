@@ -381,11 +381,11 @@ public class AutoNurtureService {
             }
             
             // ====== 阶段2: 设备任务（动态并发，单设备超时控制） ======
-            log.info("任务 {} 开始设备任务阶段，总设备数: {}，保持10个并发，单设备超时: {}分钟", 
+            log.info("任务 {} 开始设备任务阶段，总设备数: {}，保持20个并发，单设备超时: {}分钟", 
                 taskId, devices.size(), config.getGroupTimeout());
             
-            // 使用固定大小线程池，保持10个活跃线程
-            ExecutorService executor = Executors.newFixedThreadPool(10);
+            // 使用固定大小线程池，保持20个活跃线程
+            ExecutorService executor = Executors.newFixedThreadPool(20);
             
             // 使用CompletionService来按完成顺序获取结果
             CompletionService<DeviceExecutionResult> completionService = 
