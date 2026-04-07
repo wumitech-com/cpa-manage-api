@@ -13,6 +13,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 public class SshUtil {
+    /**
+     * 生成限流key。
+     * 有跳板机时按“跳板机 -> 目标机”维度限流，避免所有目标机共享同一个桶。
+     */
+    private static String buildRateLimitKey(String host, String jumpHost) {
+        if (jumpHost != null && !jumpHost.isEmpty()) {
+            return jumpHost + "->" + host;
+        }
+        return host;
+    }
 
     /**
      * 执行SSH命令（使用私钥认证，支持跳板机）
@@ -55,7 +65,7 @@ public class SshUtil {
                                                         String jumpHost, int jumpPort, 
                                                         String jumpUsername, String jumpPassword) {
         // 限流：获取执行权限
-        String serverKey = jumpHost != null && !jumpHost.isEmpty() ? jumpHost : host;
+        String serverKey = buildRateLimitKey(host, jumpHost);
         if (!SshRateLimiter.acquire(serverKey)) {
             SshResult result = new SshResult();
             result.setSuccess(false);
@@ -75,6 +85,15 @@ public class SshUtil {
                 try {
                     jumpSession = SshConnectionPool.getOrCreateJumpSession(
                         jumpHost, jumpPort, jumpUsername, privateKey, passphrase, timeout);
+
+                    if (jumpSession == null) {
+                        // 连接池可能因为并发/上限等原因返回 null；这里不要继续 openChannel，避免 NPE
+                        log.warn("SSH跳板机会话获取失败: jumpSession为null, jump={}@{} target={}@{}",
+                                jumpUsername, jumpHost, username, host);
+                        result.setSuccess(false);
+                        result.setErrorMessage("SSH跳板机会话获取失败: session为null");
+                        return result;
+                    }
                     
                     // 减少日志输出
                     if (log.isDebugEnabled()) {
@@ -100,6 +119,14 @@ public class SshUtil {
                 try {
                     session = SshConnectionPool.getOrCreateDirectSession(
                         host, port, username, privateKey, passphrase, timeout);
+
+                    if (session == null) {
+                        // 连接池可能因为并发/上限等原因返回 null；这里不要继续 openChannel，避免 NPE
+                        log.warn("SSH目标会话获取失败: session为null, target={}@{}:{}", username, host, port);
+                        result.setSuccess(false);
+                        result.setErrorMessage("SSH会话获取失败: session为null（连接池可能已耗尽或等待信号量超时）");
+                        return result;
+                    }
                     
                     // 减少日志输出
                     if (log.isDebugEnabled()) {
@@ -337,6 +364,14 @@ public class SshUtil {
                 try {
                     jumpSession = SshConnectionPool.getOrCreateJumpSession(
                         jumpHost, jumpPort, jumpUsername, privateKey, passphrase, timeout);
+
+                    if (jumpSession == null) {
+                        log.warn("SSH跳板机会话获取失败(异步): jumpSession为null, jump={}@{} target={}@{}",
+                                jumpUsername, jumpHost, username, host);
+                        result.setSuccess(false);
+                        result.setErrorMessage("SSH跳板机会话获取失败(异步): session为null");
+                        return result;
+                    }
                     
                     log.info("通过跳板机执行异步命令: {}@{}:{}", username, host, port);
                     
@@ -365,6 +400,13 @@ public class SshUtil {
                 try {
                     session = SshConnectionPool.getOrCreateDirectSession(
                         host, port, username, privateKey, passphrase, timeout);
+
+                    if (session == null) {
+                        log.warn("SSH目标会话获取失败(异步): session为null, target={}@{}:{}", username, host, port);
+                        result.setSuccess(false);
+                        result.setErrorMessage("SSH会话获取失败(异步): session为null（连接池可能已耗尽或等待信号量超时）");
+                        return result;
+                    }
                     
                     log.info("执行SSH异步命令: {}@{}:{}", username, host, port);
                     

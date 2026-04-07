@@ -5,5 +5,5 @@ metadata:
   namespace: wumitech-cpa
 data:
   SPRING_PROFILES_ACTIVE: "prod"
-  JAVA_OPTS: "-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+  JAVA_OPTS: "-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Dssh.rate.acquireTimeoutSeconds=180"
 

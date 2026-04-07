@@ -1,0 +1,1 @@
+import{d as e,f as t,h as n,l as r,w as i,x as a,z as o}from"./vendor-element-plus-Bbpnq-E3.js";var s={class:`card page-block`},c={class:`panel-title`},l={key:0,class:`block-desc`},u=n({__name:`PageBlock`,props:{title:{},desc:{}},setup(n){return(u,d)=>(a(),t(`div`,s,[r(`div`,c,o(n.title),1),n.desc?(a(),t(`p`,l,o(n.desc),1)):e(``,!0),i(u.$slots,`default`)]))}});export{u as t};

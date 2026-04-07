@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.cpa.entity.TtRegisterTask;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -123,5 +125,35 @@ public interface TtRegisterTaskRepository extends BaseMapper<TtRegisterTask> {
         wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
         return selectList(wrapper);
     }
+
+    /**
+     * 显式分页：防止 MyBatis-Plus pagination 插件在某些环境未生效。
+     * offset = (page-1)*limit
+     */
+    @Select("<script>" +
+            "SELECT * FROM tt_register_task " +
+            "WHERE 1=1 " +
+            "<if test='taskId != null and taskId != \"\"'> AND task_id LIKE CONCAT('%', #{taskId}, '%') </if>" +
+            "<if test='status != null and status != \"\" and status != \"ALL\"'> AND status = #{status} </if>" +
+            "<if test='serverIp != null and serverIp != \"\"'> AND server_ip = #{serverIp} </if>" +
+            "ORDER BY created_at DESC " +
+            "LIMIT #{limit} OFFSET #{offset} " +
+            "</script>")
+    List<TtRegisterTask> listTasksPaged(@Param("taskId") String taskId,
+                                         @Param("status") String status,
+                                         @Param("serverIp") String serverIp,
+                                         @Param("offset") int offset,
+                                         @Param("limit") int limit);
+
+    @Select("<script>" +
+            "SELECT COUNT(*) FROM tt_register_task " +
+            "WHERE 1=1 " +
+            "<if test='taskId != null and taskId != \"\"'> AND task_id LIKE CONCAT('%', #{taskId}, '%') </if>" +
+            "<if test='status != null and status != \"\" and status != \"ALL\"'> AND status = #{status} </if>" +
+            "<if test='serverIp != null and serverIp != \"\"'> AND server_ip = #{serverIp} </if>" +
+            "</script>")
+    long countTasks(@Param("taskId") String taskId,
+                     @Param("status") String status,
+                     @Param("serverIp") String serverIp);
 }
 

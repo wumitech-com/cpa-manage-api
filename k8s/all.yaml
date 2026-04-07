@@ -1,4 +1,4 @@
-﻿apiVersion: v1
+apiVersion: v1
 kind: Namespace
 metadata:
   name: wumitech-cpa
@@ -12,7 +12,7 @@ metadata:
   namespace: wumitech-cpa
 data:
   SPRING_PROFILES_ACTIVE: "prod"
-  JAVA_OPTS: "-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+  JAVA_OPTS: "-Xms512m -Xmx2048m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Dssh.rate.acquireTimeoutSeconds=180"
 
 apiVersion: apps/v1
 kind: Deployment
@@ -79,6 +79,7 @@ spec:
       volumes:
       - name: logs
         emptyDir: {}
+---
 apiVersion: v1
 kind: Service
 metadata:

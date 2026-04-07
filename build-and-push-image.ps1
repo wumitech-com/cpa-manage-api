@@ -1,5 +1,14 @@
 # CPA Manage API Docker Image Build and Push Script
 $ErrorActionPreference = "Continue"
+param(
+    [switch]$ForceFrontendInstall
+)
+
+# Always run from script directory to avoid picking wrong Dockerfile/context.
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not [string]::IsNullOrWhiteSpace($scriptDir)) {
+    Set-Location $scriptDir
+}
 
 $imageRegistry = "uhub.service.ucloud.cn/wumitech.public"
 $imageName = "cpa-manage-api"
@@ -38,8 +47,76 @@ Write-Host "时间戳标签: $timestampTag" -ForegroundColor Yellow
 Write-Host "Latest标签: $latestTag" -ForegroundColor Yellow
 Write-Host ""
 
-# Step 1: Check Docker
-Write-Host "[1/5] Checking Docker..." -ForegroundColor Yellow
+# Step 1: Build Vue frontend (production assets)
+Write-Host "[1/7] Building Vue frontend..." -ForegroundColor Yellow
+$frontendDir = "src\main\resources\static\console-vue"
+$frontendPackageJson = Join-Path $frontendDir "package.json"
+$frontendIndex = Join-Path $frontendDir "index.html"
+$frontendIndexTemplate = Join-Path $frontendDir "index.template.html"
+if (-not (Test-Path $frontendPackageJson)) {
+    Write-Host "Frontend package.json not found: $frontendPackageJson" -ForegroundColor Red
+    exit 1
+}
+if (-not (Test-Path $frontendIndexTemplate)) {
+    Write-Host "Frontend index template missing: $frontendIndexTemplate" -ForegroundColor Red
+    exit 1
+}
+
+# Ensure source index is always in Vite entry form before running frontend build.
+Copy-Item $frontendIndexTemplate $frontendIndex -Force
+
+npm -v 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "npm is not available. Please install Node.js/npm first." -ForegroundColor Red
+    exit 1
+}
+
+Push-Location $frontendDir
+try {
+    $nodeModulesDir = Join-Path (Get-Location) "node_modules"
+    $needInstall = $ForceFrontendInstall -or (-not (Test-Path $nodeModulesDir))
+    $vueTscCmd = Get-Command vue-tsc -ErrorAction SilentlyContinue
+    if (-not $vueTscCmd) {
+        $binVueTsc = Join-Path (Get-Location) "node_modules\.bin\vue-tsc.cmd"
+        if (-not (Test-Path $binVueTsc)) {
+            $needInstall = $true
+        }
+    }
+
+    if ($needInstall) {
+        Write-Host "Installing frontend dependencies..." -ForegroundColor Gray
+        npm install --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Frontend dependency install failed!" -ForegroundColor Red
+            Write-Host "Hint: close Vite/node processes, then retry with admin if needed." -ForegroundColor Yellow
+            exit 1
+        }
+    } else {
+        Write-Host "Using existing node_modules (skip install)." -ForegroundColor Gray
+    }
+
+    npm run build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Frontend build failed!" -ForegroundColor Red
+        exit 1
+    }
+
+    $distDir = Join-Path (Get-Location) "dist"
+    $distIndex = Join-Path $distDir "index.html"
+    if (-not (Test-Path $distIndex)) {
+        Write-Host "Frontend dist output missing: $distIndex" -ForegroundColor Red
+        exit 1
+    }
+
+    Copy-Item (Join-Path $distDir "*") (Get-Location) -Recurse -Force
+} finally {
+    Pop-Location
+}
+Write-Host "Vue frontend build success!" -ForegroundColor Green
+Write-Host ""
+
+# Step 2: Check Docker
+Write-Host "[2/7] Checking Docker..." -ForegroundColor Yellow
 docker info 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Docker is not running, please start Docker Desktop" -ForegroundColor Red
@@ -48,15 +125,19 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Docker is running" -ForegroundColor Green
 Write-Host ""
 
-# Step 2: Build Maven project
-Write-Host "[2/5] Building Maven project..." -ForegroundColor Yellow
-mvn clean package -DskipTests
+# Step 3: Build Maven project
+Write-Host "[3/7] Building Maven project..." -ForegroundColor Yellow
+mvn package -DskipTests
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Maven build failed!" -ForegroundColor Red
+    Write-Host "Hint: if target is locked, stop running Java process and retry." -ForegroundColor Yellow
     exit 1
 }
 Write-Host "Maven build success!" -ForegroundColor Green
 Write-Host ""
+
+# Restore source index to template form to avoid polluting repo with built index.html.
+Copy-Item $frontendIndexTemplate $frontendIndex -Force
 
 # Check JAR file
 $jarFile = "target\cpa-manage-api-0.0.1-SNAPSHOT.jar"
@@ -68,12 +149,24 @@ $jarInfo = Get-Item $jarFile
 Write-Host "JAR file size: $([math]::Round($jarInfo.Length / 1MB, 2)) MB" -ForegroundColor Gray
 Write-Host ""
 
-# Step 3: Build Docker image
-Write-Host "[3/6] Building Docker image..." -ForegroundColor Yellow
+# Step 4: Build Docker image
+Write-Host "[4/7] Building Docker image..." -ForegroundColor Yellow
 Write-Host "Building with tags:" -ForegroundColor Gray
 Write-Host "  - $fullImageNameTimestamp" -ForegroundColor Gray
 Write-Host "  - $fullImageNameLatest" -ForegroundColor Gray
-docker build -t ${fullImageNameTimestamp} -t ${fullImageNameLatest} .
+$dockerfilePath = Join-Path (Get-Location) "Dockerfile"
+if (-not (Test-Path $dockerfilePath)) {
+    Write-Host "Dockerfile not found: $dockerfilePath" -ForegroundColor Red
+    exit 1
+}
+$dockerfileFirstLine = (Get-Content $dockerfilePath -TotalCount 1)
+Write-Host "Using Dockerfile: $dockerfilePath" -ForegroundColor Gray
+Write-Host "Dockerfile base line: $dockerfileFirstLine" -ForegroundColor Gray
+
+# Force classic builder and forbid pulling remote base image metadata.
+# This makes docker build use local pulled base image first.
+$env:DOCKER_BUILDKIT = "0"
+docker build --pull=false -f $dockerfilePath -t ${fullImageNameTimestamp} -t ${fullImageNameLatest} .
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Docker image build failed!" -ForegroundColor Red
     exit 1
@@ -81,8 +174,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Docker image build success!" -ForegroundColor Green
 Write-Host ""
 
-# Step 4: Check registry login
-Write-Host "[4/6] Checking registry login..." -ForegroundColor Yellow
+# Step 5: Check registry login
+Write-Host "[5/7] Checking registry login..." -ForegroundColor Yellow
 $loginRequired = $false
 $dockerConfig = "$env:USERPROFILE\.docker\config.json"
 if (Test-Path $dockerConfig) {
@@ -102,8 +195,8 @@ if ($loginRequired) {
 }
 Write-Host ""
 
-# Step 5: Push timestamp tag to registry
-Write-Host "[5/6] Pushing timestamp tag to registry..." -ForegroundColor Yellow
+# Step 6: Push timestamp tag to registry
+Write-Host "[6/7] Pushing timestamp tag to registry..." -ForegroundColor Yellow
 Write-Host "Pushing image: $fullImageNameTimestamp" -ForegroundColor Gray
 docker push ${fullImageNameTimestamp}
 if ($LASTEXITCODE -ne 0) {
@@ -116,8 +209,8 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Timestamp tag push success!" -ForegroundColor Green
 Write-Host ""
 
-# Step 6: Push latest tag to registry
-Write-Host "[6/6] Pushing latest tag to registry..." -ForegroundColor Yellow
+# Step 7: Push latest tag to registry
+Write-Host "[7/7] Pushing latest tag to registry..." -ForegroundColor Yellow
 Write-Host "Pushing image: $fullImageNameLatest" -ForegroundColor Gray
 docker push ${fullImageNameLatest}
 if ($LASTEXITCODE -ne 0) {

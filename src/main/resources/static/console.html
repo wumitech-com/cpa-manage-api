@@ -3,10 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    window.location.replace('/console-vue/login');
+  </script>
   <title>TT Farm Console - 批量养号控制中心</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="/console/theme-business.css">
   <style>
     :root {
       --glass: rgba(255, 255, 255, 0.5);
@@ -106,6 +110,7 @@
       letter-spacing: -0.02em;
       line-height: 1.05;
       background: linear-gradient(135deg, rgba(249,168,212,1), rgba(251,207,232,1));
+      background-clip: text;
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       white-space: nowrap;
@@ -183,6 +188,7 @@
     .stat-card .value {
       font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      background-clip: text;
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
     .stat-card.green .value { color: #16a34a; -webkit-text-fill-color: #16a34a; }
@@ -226,6 +232,12 @@
     .status.pending { background: rgba(249, 168, 212, 0.3); color: var(--accent); }
     .status.failed, .status.stopped { background: rgba(253, 164, 175, 0.35); color: var(--error); }
     .status.success { background: rgba(134, 239, 172, 0.35); color: #16a34a; }
+    #task-table thead th { position: sticky; top: 0; z-index: 3; background: rgba(255,255,255,0.55); backdrop-filter: blur(10px); }
+    .cell-truncate { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px; display:inline-block; vertical-align:bottom; }
+    .task-progress { min-width: 170px; }
+    .task-progress-bar { width: 100%; height: 8px; border-radius: 999px; background: rgba(226,232,240,0.8); overflow: hidden; }
+    .task-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .task-progress-text { margin-top: 6px; font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
     .panel-full { grid-column: 1 / -1; }
     .time { color: var(--text-muted); font-size: 0.75rem; }
     .panel-body::-webkit-scrollbar { width: 8px; }
@@ -239,7 +251,7 @@
       text-align: center; border-top: 1px solid rgba(255,255,255,0.4);
     }
     .stat-card.loading .value { opacity: 0.5; }
-    .traffic-row { grid-template-columns: repeat(2, minmax(0,1fr)); margin-top: -4px; }
+    .traffic-row { grid-template-columns: repeat(3, minmax(0,1fr)); margin-top: -4px; }
     .trend-section {
       background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; margin-bottom: 24px;
@@ -376,6 +388,509 @@
       color: rgba(107,76,90,0.75);
     }
     .task-input::placeholder { color: rgba(166,138,151,0.85); }
+    /* 账号管理 - 纯白简约风格 */
+    #page-account-manage {
+      /* 纯白简约：大白底 + 粉腮红描边，干净利落 */
+      --am-head-bg: #fff;
+      --am-th-bg: #FDF6F8;
+      --am-row-hover: #FDF6F8;
+      --am-card-bg1: #fff;
+      --am-card-bg2: #fff;
+      --am-card-border: #F5E5EA;
+      --am-card-shadow: rgba(0,0,0,0.04);
+      --am-tone-text: #664c54;
+    }
+    /* 覆盖 panel 的玻璃效果，换成纯白实底卡片 */
+    #page-account-manage .panel {
+      background: #fff !important;
+      border: 1px solid #F0E0E5 !important;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    #page-account-manage .panel-header {
+      border-bottom: 1px solid #F5E5EA !important;
+      position: sticky;
+      top: 0;
+      z-index: 6;
+    }
+    #page-account-manage .am-filter-row-main,
+    #page-account-manage .am-filter-row-sub {
+      background: #fff !important;
+      border: 1px solid #F5E5EA !important;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.04) !important;
+    }
+    #page-account-manage #am-table tbody td {
+      border-bottom: 1px solid #F5E5EA;
+      color: #444;
+    }
+    #page-account-manage .task-input,
+    #page-account-manage .am-mini-control,
+    #page-account-manage .am-date-control,
+    #page-account-manage .am-mid-control {
+      background: #fff !important;
+      border: 1px solid #F0E0E5 !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      transition: none !important;
+    }
+    #page-account-manage .task-input:focus,
+    #page-account-manage .am-mini-control:focus,
+    #page-account-manage .am-date-control:focus,
+    #page-account-manage .am-mid-control:focus {
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    #page-account-manage .ui-btn.ghost {
+      background: #fff !important;
+      border: 1px solid #E79AB7 !important;
+      color: #664c54 !important;
+      box-shadow: none !important;
+    }
+    #page-account-manage .ui-btn.ghost:hover {
+      background: #FDF6F8 !important;
+    }
+    #page-account-manage .panel-header {
+      background: var(--am-head-bg);
+    }
+    #page-account-manage .panel-title {
+      color: var(--am-tone-text);
+    }
+    #page-account-manage .header h1 {
+      font-size: 2.2rem;
+      margin-bottom: 4px;
+    }
+    #page-account-manage .header .sub {
+      font-size: 1.75rem;
+      line-height: 1.25;
+      margin-bottom: 4px;
+    }
+    #page-account-manage .header .sub-emoji {
+      font-size: 1.65rem;
+      line-height: 1.2;
+      opacity: 0.9;
+    }
+    #page-account-manage #am-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    #page-account-manage #am-table thead th {
+      background: var(--am-th-bg);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      white-space: nowrap;
+      word-break: keep-all;
+      line-height: 1.2;
+      min-width: 88px;
+    }
+    #page-account-manage #am-table th,
+    #page-account-manage #am-table td {
+      box-sizing: border-box;
+    }
+    #page-account-manage #am-table td .cell-truncate {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #page-account-manage #am-table th:nth-child(1), #page-account-manage #am-table td:nth-child(1) { width: 8%; }
+    #page-account-manage #am-table th:nth-child(2), #page-account-manage #am-table td:nth-child(2) { width: 5%; }
+    #page-account-manage #am-table th:nth-child(3), #page-account-manage #am-table td:nth-child(3) { width: 9%; }
+    #page-account-manage #am-table th:nth-child(4), #page-account-manage #am-table td:nth-child(4) { width: 8%; }
+    #page-account-manage #am-table th:nth-child(5), #page-account-manage #am-table td:nth-child(5) { width: 13%; }
+    #page-account-manage #am-table th:nth-child(6), #page-account-manage #am-table td:nth-child(6) { width: 6%; }
+    #page-account-manage #am-table th:nth-child(7), #page-account-manage #am-table td:nth-child(7) { width: 6%; }
+    #page-account-manage #am-table th:nth-child(8), #page-account-manage #am-table td:nth-child(8) { width: 11%; }
+    #page-account-manage #am-table th:nth-child(9), #page-account-manage #am-table td:nth-child(9) { width: 9%; }
+    #page-account-manage #am-table th:nth-child(10), #page-account-manage #am-table td:nth-child(10) { width: 7%; }
+    #page-account-manage #am-table th:nth-child(11), #page-account-manage #am-table td:nth-child(11) { width: 7%; }
+    #page-account-manage #am-table th:nth-child(12), #page-account-manage #am-table td:nth-child(12) { width: 8%; }
+    #page-account-manage #am-table th:nth-child(13), #page-account-manage #am-table td:nth-child(13) { width: 8%; }
+    #page-account-manage .panel-body {
+      display: flex;
+      flex-direction: column;
+      height: min(56vh, 520px);
+      min-height: 360px;
+      overflow: hidden;
+    }
+    #page-account-manage .am-table-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    #page-account-manage #am-pagination {
+      position: relative;
+      background: #fff;
+      border-top: 1px solid #F5E5EA;
+      padding: 8px 12px;
+      margin-top: 0 !important;
+    }
+    #page-account-manage #am-table tbody tr:hover td {
+      background: var(--am-row-hover);
+    }
+    #page-account-manage .am-status-chip {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    #page-account-manage .am-status-saleable { background: rgba(134, 239, 172, 0.35); color: #15803d; }
+    #page-account-manage .am-status-sold { background: rgba(196, 181, 253, 0.35); color: #6d28d9; }
+    #page-account-manage .am-status-blocked { background: rgba(253, 164, 175, 0.35); color: #be123c; }
+    #page-account-manage .am-status-unknown { background: rgba(226, 232, 240, 0.65); color: #64748b; }
+    #page-account-manage .am-filter-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+      width: 100%;
+    }
+    #page-account-manage .am-filter-toolbar,
+    #page-account-manage .am-filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    #page-account-manage .am-filter-row-main,
+    #page-account-manage .am-filter-row-sub {
+      flex-wrap: nowrap !important;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+    #page-account-manage .am-filter-toolbar { justify-content: flex-start; }
+    #page-account-manage .am-filter-row-sub { justify-content: flex-start; }
+    #page-account-manage .am-filter-label {
+      color: var(--text-muted);
+      font-weight: 800;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    #page-account-manage .am-mini-control {
+      width: auto;
+      min-width: 84px;
+      height: 26px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      box-shadow: none;
+    }
+    #page-account-manage .am-date-control {
+      width: 124px;
+      height: 26px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      box-shadow: none;
+      min-width: 124px;
+    }
+    #page-account-manage .am-mid-control {
+      width: 150px;
+      height: 26px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      box-shadow: none;
+    }
+    #page-account-manage .am-action-btn {
+      padding: 2px 10px;
+      height: 26px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      min-width: 58px;
+    }
+    #page-account-manage .am-action-group {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* 筛选区：卡片分组布局 */
+    #page-account-manage.am-layout-card .am-filter-toolbar,
+    #page-account-manage.am-layout-card .am-filter-row-main,
+    #page-account-manage.am-layout-card .am-filter-row-sub {
+      border: 1px solid var(--am-card-border);
+      border-radius: 14px;
+      padding: 10px;
+      background: linear-gradient(135deg, var(--am-card-bg1), var(--am-card-bg2));
+      box-shadow: 0 8px 20px var(--am-card-shadow);
+    }
+    #page-account-manage.am-layout-card .am-filter-toolbar {
+      justify-content: space-between;
+    }
+    #page-account-manage.am-layout-card .am-filter-row-main,
+    #page-account-manage.am-layout-card .am-filter-row-sub {
+      justify-content: flex-start;
+    }
+
+    /* 开窗管理样式：与账号管理保持一致 */
+    #page-window-manage {
+      --am-head-bg: #fff;
+      --am-th-bg: #FDF6F8;
+      --am-row-hover: #FDF6F8;
+      --am-card-bg1: #fff;
+      --am-card-bg2: #fff;
+      --am-card-border: #F5E5EA;
+      --am-card-shadow: rgba(0,0,0,0.04);
+      --am-tone-text: #664c54;
+    }
+    #page-window-manage .panel {
+      background: #fff !important;
+      border: 1px solid #F0E0E5 !important;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+    }
+    #page-window-manage .panel-header {
+      border-bottom: 1px solid #F5E5EA !important;
+      background: var(--am-head-bg);
+      position: sticky;
+      top: 0;
+      z-index: 6;
+    }
+    #page-window-manage .panel-title { color: var(--am-tone-text); }
+    #page-window-manage .header h1 {
+      font-size: 2.1rem;
+      margin-bottom: 4px;
+    }
+    #page-window-manage .header .sub {
+      font-size: 1.7rem;
+      line-height: 1.25;
+      margin-bottom: 4px;
+    }
+    #page-window-manage .am-filter-row-main,
+    #page-window-manage .am-filter-row-sub {
+      background: #fff !important;
+      border: 1px solid #F5E5EA !important;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.04) !important;
+    }
+    #page-window-manage #wm-table thead th {
+      background: var(--am-th-bg);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      white-space: nowrap;
+      word-break: keep-all;
+      line-height: 1.2;
+      min-width: 88px;
+    }
+    #page-window-manage #wm-table {
+      table-layout: fixed;
+      width: 100%;
+    }
+    #page-window-manage #wm-table th,
+    #page-window-manage #wm-table td {
+      box-sizing: border-box;
+    }
+    #page-window-manage #wm-table td .cell-truncate {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #page-window-manage #wm-table th:nth-child(1), #page-window-manage #wm-table td:nth-child(1) { width: 15%; }
+    #page-window-manage #wm-table th:nth-child(2), #page-window-manage #wm-table td:nth-child(2) { width: 11%; }
+    #page-window-manage #wm-table th:nth-child(3), #page-window-manage #wm-table td:nth-child(3) { width: 11%; }
+    #page-window-manage #wm-table th:nth-child(4), #page-window-manage #wm-table td:nth-child(4) { width: 10%; }
+    #page-window-manage #wm-table th:nth-child(5), #page-window-manage #wm-table td:nth-child(5) { width: 12%; }
+    #page-window-manage #wm-table th:nth-child(6), #page-window-manage #wm-table td:nth-child(6) { width: 14%; }
+    #page-window-manage #wm-table th:nth-child(7), #page-window-manage #wm-table td:nth-child(7) { width: 14%; }
+    #page-window-manage #wm-table th:nth-child(8), #page-window-manage #wm-table td:nth-child(8) { width: 13%; }
+    #page-window-manage .panel-body {
+      display: flex;
+      flex-direction: column;
+      height: min(56vh, 520px);
+      min-height: 360px;
+      overflow: hidden;
+    }
+    #page-window-manage .wm-table-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    #page-window-manage #wm-pagination {
+      position: relative;
+      background: #fff;
+      border-top: 1px solid #F5E5EA;
+      padding: 8px 12px;
+      margin-top: 0 !important;
+    }
+    #page-window-manage #wm-table tbody td {
+      border-bottom: 1px solid #F5E5EA;
+      color: #444;
+    }
+    #page-window-manage #wm-table tbody tr:hover td { background: var(--am-row-hover); }
+    #page-window-manage .task-input,
+    #page-window-manage .am-mini-control,
+    #page-window-manage .am-date-control,
+    #page-window-manage .am-mid-control {
+      background: #fff !important;
+      border: 1px solid #F0E0E5 !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      transition: none !important;
+    }
+    #page-window-manage .task-input:focus,
+    #page-window-manage .am-mini-control:focus,
+    #page-window-manage .am-date-control:focus,
+    #page-window-manage .am-mid-control:focus {
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    #page-window-manage .ui-btn.ghost {
+      background: #fff !important;
+      border: 1px solid #E79AB7 !important;
+      color: #664c54 !important;
+      box-shadow: none !important;
+    }
+    #page-window-manage .ui-btn.ghost:hover { background: #FDF6F8 !important; }
+    #page-window-manage .am-filter-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+      width: 100%;
+    }
+    #page-window-manage .am-filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-start;
+    }
+    #page-window-manage .am-filter-row-main,
+    #page-window-manage .am-filter-row-sub {
+      flex-wrap: nowrap !important;
+      overflow: hidden;
+    }
+    #page-window-manage .am-filter-label {
+      color: var(--text-muted);
+      font-weight: 800;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    #page-window-manage .am-mini-control {
+      width: auto;
+      min-width: 84px;
+      height: 26px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      box-shadow: none;
+    }
+    #page-window-manage .am-date-control {
+      width: 124px;
+      height: 26px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      box-shadow: none;
+      min-width: 124px;
+    }
+    #page-window-manage .am-mid-control {
+      width: 150px;
+      height: 26px;
+      padding: 2px 8px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      box-shadow: none;
+    }
+    #page-window-manage .am-action-btn {
+      padding: 2px 10px;
+      height: 26px;
+      font-size: 0.78rem;
+      border-radius: 10px;
+      min-width: 58px;
+    }
+    #page-window-manage .am-action-group {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    #page-window-manage.am-layout-card .am-filter-row-main,
+    #page-window-manage.am-layout-card .am-filter-row-sub {
+      border: 1px solid var(--am-card-border);
+      border-radius: 14px;
+      padding: 10px;
+      background: linear-gradient(135deg, var(--am-card-bg1), var(--am-card-bg2));
+      box-shadow: 0 8px 20px var(--am-card-shadow);
+    }
+    #page-device-inspect {
+      --am-bg: #FFFFFF;
+      --am-head-bg: linear-gradient(135deg, #FFFFFF 0%, #FFFFFF 100%);
+      --am-tone-text: #334155;
+    }
+    #page-device-inspect .panel {
+      border: 1px solid #F2F4F7 !important;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04) !important;
+      background: var(--am-bg) !important;
+      border-radius: 14px;
+    }
+    #page-device-inspect .panel-header { border-bottom: 1px solid #F2F4F7 !important; background: var(--am-head-bg); }
+    #page-device-inspect .panel-title { color: var(--am-tone-text); }
+    #page-device-inspect .task-input, #page-device-inspect .am-mid-control {
+      border-color: #E5E7EB !important;
+      background: #FFFFFF !important;
+      color: #0F172A !important;
+    }
+    #page-device-inspect .ui-btn.ghost {
+      background: #FFFFFF !important;
+      color: #475569 !important;
+      border-color: #D1D5DB !important;
+    }
+    #page-device-inspect .ui-btn.ghost:hover { background: #F8FAFC !important; }
+    #page-device-inspect .am-filter-wrap {
+      margin-left: auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    #page-device-inspect .am-filter-row {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    #page-device-inspect .am-filter-label {
+      font-size: 0.72rem;
+      color: #64748B;
+      margin-right: 2px;
+      white-space: nowrap;
+    }
+    #page-device-inspect .am-mid-control {
+      width: 300px;
+      min-width: 220px;
+      height: 28px;
+      font-size: 0.78rem;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    #page-device-inspect .am-action-btn {
+      height: 28px;
+      font-size: 0.78rem;
+      padding: 2px 10px;
+      border-radius: 999px;
+      min-width: 64px;
+    }
+
     .task-actions {
       display: flex;
       gap: 10px;
@@ -415,6 +930,10 @@
     }
     @media (max-width: 760px) {
       .task-form { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+      #page-account-manage .am-filter-row-main,
+      #page-account-manage .am-filter-row-sub {
+        justify-content: flex-start;
+      }
     }
     /* 今日注册：心跳 + 星星闪烁 */
     .stat-card.heartbeat .value {
@@ -517,7 +1036,7 @@
     .flatpickr-months .flatpickr-month { border-radius: 16px 16px 0 0 !important; }
     .flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { padding: 8px !important; }
   </style>
-  </style>
+  <link rel="stylesheet" href="/console/theme-business.css?v=20260327">
 </head>
 <body>
   <div class="layout">
@@ -533,6 +1052,9 @@
       <nav class="nav-item active" data-page="overview"><span class="icon"></span><span class="nav-emoji">🌸</span> 今日注册 ✨</nav>
       <nav class="nav-item" data-page="block-rate"><span class="icon"></span><span class="nav-emoji">📊</span> 谁被封了 ♡</nav>
       <nav class="nav-item" data-page="accounts"><span class="icon"></span><span class="nav-emoji">🪄</span> 任务列表</nav>
+      <nav class="nav-item" data-page="account-manage"><span class="icon"></span><span class="nav-emoji">🧾</span> 账号管理</nav>
+      <nav class="nav-item" data-page="window-manage"><span class="icon"></span><span class="nav-emoji">🪟</span> 开窗管理</nav>
+      <nav class="nav-item" data-page="device-inspect"><span class="icon"></span><span class="nav-emoji">📱</span> 查看设备</nav>
       <nav class="nav-item" data-page="retention"><span class="icon"></span><span class="nav-emoji">📖</span> 留存信息</nav>
     </aside>
     <main class="main">
@@ -583,6 +1105,11 @@
             <div class="label">单个成功平均流量 <span class="label-emoji">⚡</span></div>
             <div class="value" id="traffic-avg">-</div>
             <div class="vs-yesterday">总流量 / 2FA 成功数（GB）</div>
+          </div>
+          <div class="stat-card purple">
+            <div class="label">当日全量流量 <span class="label-emoji">📦</span></div>
+            <div class="value" id="traffic-total-all">-</div>
+            <div class="vs-yesterday">trafficData 非空全部账号（GB）</div>
           </div>
         </div>
         <div class="trend-section">
@@ -831,39 +1358,60 @@
           <div class="panel" style="grid-column:1 / span 2;">
             <div class="panel-header">
               <span class="panel-title">当前任务列表 ♡</span>
-              <div class="panel-actions" style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:0.78rem;">
-                <span>每页</span>
-                <select id="task-page-size" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
-                  <option value="10">10</option>
-                  <option value="50" selected>50</option>
-                  <option value="100">100</option>
-                </select>
-                <span>条</span>
-                <button type="button" id="task-query-btn" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">查询</button>
+              <div class="panel-actions" style="margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end;max-width:720px;">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+                  <span style="color:var(--text-muted);font-weight:800;">Server IP</span>
+                  <input type="text" id="task-filter-serverip" class="task-input" style="width:180px;padding:2px 8px;height:26px;font-size:0.78rem;" placeholder="精确匹配" />
+                  <span style="color:var(--text-muted);font-weight:800;">Phone ID</span>
+                  <input type="text" id="task-filter-phoneid" class="task-input" style="width:180px;padding:2px 8px;height:26px;font-size:0.78rem;" placeholder="精确匹配" />
+                  <span style="color:var(--text-muted);font-weight:800;">状态</span>
+                  <select id="task-filter-status" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
+                    <option value="ALL" selected>全部</option>
+                    <option value="PENDING">PENDING</option>
+                    <option value="RUNNING">RUNNING</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="FAILED">FAILED</option>
+                    <option value="STOPPED">STOPPED</option>
+                  </select>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:flex-end;">
+                  <button type="button" id="task-query-btn" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">查询</button>
+                  <button type="button" id="task-reset-btn" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">重置</button>
+                </div>
               </div>
             </div>
             <div class="panel-body">
               <table class="data-table" id="task-table">
                 <thead>
                   <tr>
-                    <th>任务ID</th>
                     <th>状态</th>
                     <th>Server IP</th>
-                    <th>设备ID</th>
-                    <th>成功/失败</th>
+                    <th>Phone ID</th>
                     <th>开始时间</th>
                     <th>结束时间</th>
                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody id="task-table-body">
-                  <tr><td colspan="8" style="text-align:center;color:var(--text-muted);">正在加载任务列表…</td></tr>
+                  <tr><td colspan="6" style="text-align:center;color:var(--text-muted);">正在加载任务列表…</td></tr>
                 </tbody>
               </table>
-              <div id="task-pagination" style="margin-top:8px;display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:0.78rem;color:var(--text-muted);">
-                <button type="button" id="task-prev" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">上一页</button>
-                <span id="task-page-info">第 1 / 1 页</span>
-                <button type="button" id="task-next" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">下一页</button>
+              <div id="task-pagination" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:0.78rem;color:var(--text-muted);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="color:var(--text-muted);font-weight:800;">每页</span>
+                  <select id="task-page-size" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
+                    <option value="10">10</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                  </select>
+                  <span style="color:var(--text-muted);font-weight:800;">条</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" id="task-prev" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">上一页</button>
+                  <span id="task-page-info">第 1 / 1 页</span>
+                  <span id="task-total-count" style="white-space:nowrap;">共 0 条</span>
+                  <button type="button" id="task-next" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">下一页</button>
+                </div>
               </div>
             </div>
           </div>
@@ -915,6 +1463,257 @@
                   小提示：先在上面点「停止」，再改配置，最后点「恢复执行」，任务会以新配置重新排队。
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 账号管理 页面 -->
+      <div class="page-view am-layout-card" id="page-account-manage">
+        <div class="content-grid page-single">
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header">
+              <span class="panel-title">查询条件</span>
+              <div class="panel-actions am-filter-wrap">
+                <div class="am-filter-row am-filter-row-main">
+                  <span class="am-filter-label">开始日期</span>
+                  <input type="text" id="am-filter-start-date" class="task-input fp-input am-date-control" placeholder="yyyy-MM-dd" readonly />
+                  <span class="am-filter-label">结束日期</span>
+                  <input type="text" id="am-filter-end-date" class="task-input fp-input am-date-control" placeholder="yyyy-MM-dd" readonly />
+                  <span class="am-filter-label">状态</span>
+                  <select id="am-filter-status" class="task-input am-mini-control">
+                    <option value="ALL" selected>全部</option>
+                    <option value="可售">可售</option>
+                    <option value="已售">已售</option>
+                    <option value="封号">封号</option>
+                    <option value="自测">自测</option>
+                    <option value="异常">异常</option>
+                  </select>
+                  <span class="am-filter-label">邮箱</span>
+                  <input type="text" id="am-filter-email" class="task-input am-mid-control" placeholder="模糊查询" />
+                  <span class="am-filter-label">账号类别</span>
+                  <select id="am-filter-account-type" class="task-input am-mini-control">
+                    <option value="ALL" selected>全部</option>
+                    <option value="小白号">小白号</option>
+                    <option value="满月白">满月白</option>
+                    <option value="橱窗号">橱窗号</option>
+                    <option value="矩阵号">矩阵号</option>
+                  </select>
+                </div>
+                <div class="am-filter-row am-filter-row-sub">
+                  <span class="am-filter-label">国家</span>
+                  <select id="am-filter-country" class="task-input am-mini-control">
+                    <option value="" selected>全部</option>
+                    <option value="US">US</option>
+                    <option value="MX">MX</option>
+                    <option value="BR">BR</option>
+                    <option value="JP">JP</option>
+                  </select>
+                  <span class="am-filter-label">地区</span>
+                  <input type="text" id="am-filter-region" class="task-input am-mid-control" placeholder="模糊查询 如 Carolina" />
+                  <span class="am-filter-label">登录方式</span>
+                  <select id="am-filter-login-method" class="task-input am-mini-control">
+                    <option value="2fa" selected>2fa</option>
+                    <option value="邮箱API">邮箱API</option>
+                    <option value="手机API">手机API</option>
+                  </select>
+                  <span class="am-filter-label">注册方式</span>
+                  <select id="am-filter-register-method" class="task-input am-mid-control">
+                    <option value="云手机" selected>云手机</option>
+                    <option value="主板机">主板机</option>
+                    <option value="魔云腾">魔云腾</option>
+                    <option value="外采">外采</option>
+                  </select>
+                  <span class="am-filter-label">备注</span>
+                  <input type="text" id="am-filter-note" class="task-input am-mid-control" placeholder="模糊查询" />
+                  <div class="am-action-group">
+                    <button type="button" id="am-query-btn" class="ui-btn ghost am-action-btn">查询</button>
+                    <button type="button" id="am-reset-btn" class="ui-btn ghost am-action-btn">重置</button>
+                  </div>
+                </div>
+              </div>
+              <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px;align-items:center;">
+                <button type="button" id="am-export-btn" class="ui-btn ghost am-action-btn" style="height:28px;padding:2px 12px;font-size:0.78rem;color:#664c54;border-color:#E79AB7;">⬇ 导出CSV</button>
+                <label id="am-import-label" class="ui-btn ghost am-action-btn" style="height:28px;padding:2px 12px;font-size:0.78rem;cursor:pointer;color:#664c54;border-color:#E79AB7;display:inline-flex;align-items:center;">
+                  ⬆ 导入CSV
+                  <input type="file" id="am-import-file" accept=".csv" style="display:none;" />
+                </label>
+              </div>
+            </div>
+            <!-- 导入结果提示 -->
+            <div id="am-import-result" style="display:none;margin:8px 16px 0;padding:10px 14px;border-radius:10px;font-size:0.78rem;line-height:1.6;border:1px solid #F5E5EA;background:#fffafc;color:#664c54;"></div>
+            <div class="panel-body">
+              <div class="am-table-scroll">
+                <table class="data-table" id="am-table">
+                  <thead>
+                    <tr>
+                      <th>注册日期</th>
+                      <th>状态</th>
+                      <th>账号</th>
+                      <th>密码</th>
+                      <th>邮箱</th>
+                      <th>登录方式</th>
+                      <th>账号类别</th>
+                      <th>备注</th>
+                      <th>IP</th>
+                      <th>州</th>
+                      <th>城市</th>
+                      <th>机型</th>
+                      <th>安卓系统版本</th>
+                    </tr>
+                  </thead>
+                  <tbody id="am-table-body">
+                    <tr><td colspan="13" style="text-align:center;color:var(--text-muted);">等待查询…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="am-pagination" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:0.78rem;color:var(--text-muted);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="color:var(--text-muted);font-weight:800;">每页</span>
+                  <select id="am-page-size" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
+                    <option value="10" selected>10</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                  <span style="color:var(--text-muted);font-weight:800;">条</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" id="am-prev" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">上一页</button>
+                  <span id="am-page-info">第 1 / 1 页</span>
+                  <span id="am-total-count" style="white-space:nowrap;">共 0 条</span>
+                  <button type="button" id="am-next" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 开窗管理 页面 -->
+      <div class="page-view am-layout-card" id="page-window-manage">
+        <div class="content-grid page-single">
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header">
+              <span class="panel-title">查询条件</span>
+              <div class="panel-actions am-filter-wrap">
+                <div class="am-filter-row am-filter-row-main">
+                  <span class="am-filter-label">刷粉开始</span>
+                  <input type="text" id="wm-filter-fan-start" class="task-input fp-input am-date-control" placeholder="yyyy-MM-dd" readonly />
+                  <span class="am-filter-label">刷粉结束</span>
+                  <input type="text" id="wm-filter-fan-end" class="task-input fp-input am-date-control" placeholder="yyyy-MM-dd" readonly />
+                  <span class="am-filter-label">养号开始</span>
+                  <input type="text" id="wm-filter-nurture-start" class="task-input fp-input am-date-control" placeholder="yyyy-MM-dd" readonly />
+                  <span class="am-filter-label">养号结束</span>
+                  <input type="text" id="wm-filter-nurture-end" class="task-input fp-input am-date-control" placeholder="yyyy-MM-dd" readonly />
+                  <span class="am-filter-label">开窗状态</span>
+                  <select id="wm-filter-shop-status" class="task-input am-mini-control">
+                    <option value="ALL" selected>全部</option>
+                    <option value="成功">成功</option>
+                    <option value="失败">失败</option>
+                    <option value="等待">等待</option>
+                  </select>
+                </div>
+                <div class="am-filter-row am-filter-row-sub">
+                  <span class="am-filter-label">养号策略</span>
+                  <select id="wm-filter-strategy" class="task-input am-mini-control">
+                    <option value="ALL" selected>全部</option>
+                    <option value="发布+浏览">发布+浏览</option>
+                    <option value="浏览">浏览</option>
+                  </select>
+                  <span class="am-filter-label">养号设备</span>
+                  <select id="wm-filter-device" class="task-input am-mid-control">
+                    <option value="ALL" selected>全部</option>
+                    <option value="ARM架构">ARM架构</option>
+                    <option value="云手机">云手机</option>
+                    <option value="魔云腾">魔云腾</option>
+                    <option value="其他">其他</option>
+                  </select>
+                  <span class="am-filter-label">国家</span>
+                  <select id="wm-filter-country" class="task-input am-mini-control">
+                    <option value="ALL" selected>全部</option>
+                    <option value="US">US</option>
+                    <option value="MX">MX</option>
+                    <option value="BR">BR</option>
+                    <option value="JP">JP</option>
+                  </select>
+                  <span class="am-filter-label">账号</span>
+                  <input type="text" id="wm-filter-account" class="task-input am-mid-control" placeholder="username 模糊查询" />
+                  <span class="am-filter-label">备注</span>
+                  <input type="text" id="wm-filter-note" class="task-input am-mid-control" placeholder="模糊查询" />
+                  <div class="am-action-group">
+                    <button type="button" id="wm-query-btn" class="ui-btn ghost am-action-btn">查询</button>
+                    <button type="button" id="wm-reset-btn" class="ui-btn ghost am-action-btn">重置</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="wm-table-scroll">
+                <table class="data-table" id="wm-table">
+                  <thead>
+                    <tr>
+                      <th>账号</th>
+                      <th>刷粉日期</th>
+                      <th>养号日期</th>
+                      <th>养号策略</th>
+                      <th>开窗状态</th>
+                      <th>注册IP归属</th>
+                      <th>注册环境</th>
+                      <th>备注</th>
+                    </tr>
+                  </thead>
+                  <tbody id="wm-table-body">
+                    <tr><td colspan="8" style="text-align:center;color:var(--text-muted);">等待查询…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="wm-pagination" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:0.78rem;color:var(--text-muted);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="color:var(--text-muted);font-weight:800;">每页</span>
+                  <select id="wm-page-size" class="task-input" style="width:auto;padding:2px 8px;height:26px;font-size:0.78rem;">
+                    <option value="10" selected>10</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                  <span style="color:var(--text-muted);font-weight:800;">条</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button type="button" id="wm-prev" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">上一页</button>
+                  <span id="wm-page-info">第 1 / 1 页</span>
+                  <span id="wm-total-count" style="white-space:nowrap;">共 0 条</span>
+                  <button type="button" id="wm-next" class="ui-btn ghost" style="padding:2px 10px;height:26px;font-size:0.78rem;">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 查看设备 页面 -->
+      <div class="page-view am-layout-card" id="page-device-inspect">
+        <header class="header">
+          <h1>查看设备</h1>
+          <p class="sub">按 phone_id + gaid 恢复历史环境并返回本地连接命令</p>
+        </header>
+        <div class="content-grid page-single">
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header">
+              <span class="panel-title">恢复参数</span>
+              <div class="panel-actions am-filter-wrap">
+                <div class="am-filter-row am-filter-row-main">
+                  <span class="am-filter-label">phone_id</span>
+                  <input type="text" id="di-phone-id" class="task-input am-mid-control" placeholder="输入目标云手机 phone_id" />
+                  <span class="am-filter-label">gaid</span>
+                  <input type="text" id="di-gaid" class="task-input am-mid-control" placeholder="输入要恢复的历史环境 gaid" />
+                  <button type="button" id="di-run-btn" class="ui-btn ghost am-action-btn">恢复并生成命令</button>
+                  <button type="button" id="di-reset-btn" class="ui-btn ghost am-action-btn">重置</button>
+                </div>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="di-result" style="font-size:0.82rem;color:#4B5563;line-height:1.8;">
+                <div style="color:var(--text-muted);">请先输入 phone_id 和 gaid，再点击“恢复并生成命令”。</div>
+              </div>
             </div>
           </div>
         </div>
@@ -986,1227 +1785,6 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/zh.js"></script>
-  <script>
-    (function() {
-      var navItems = document.querySelectorAll('.nav-item[data-page]');
-      var pages = document.querySelectorAll('.page-view');
-      var currentPage = 'overview';
-
-      function switchPage(pageId) {
-        if (pageId === currentPage) return;
-        var targetPage = document.getElementById('page-' + pageId);
-        var currentPageEl = document.getElementById('page-' + currentPage);
-        if (!targetPage || !currentPageEl) return;
-
-        currentPageEl.classList.add('leaving');
-        setTimeout(function() {
-          currentPageEl.classList.remove('active', 'leaving');
-          targetPage.classList.add('active');
-          currentPage = pageId;
-
-          navItems.forEach(function(nav) {
-            nav.classList.toggle('active', nav.getAttribute('data-page') === pageId);
-          });
-        }, 350);
-      }
-
-      navItems.forEach(function(nav) {
-        nav.addEventListener('click', function() {
-          var page = this.getAttribute('data-page');
-          if (page) switchPage(page);
-        });
-      });
-    })();
-
-    // 加载每日注册统计
-    (function() {
-      var trendBars = document.getElementById('trend-bars');
-      var trafficBars = document.getElementById('traffic-trend-bars');
-      var dateInput = document.getElementById('overview-date');
-      var forceMockPage = /(?:\?|&)mock=1(?:&|$)/.test(location.search || '');
-      var MOCK_TWOFA_DETAIL = {
-        androidVersionDist: [
-          { value: '14', count: 926, percent: 50.14 },
-          { value: '13', count: 911, percent: 49.32 },
-          { value: '30', count: 10, percent: 0.54 }
-        ],
-        behaviorDist: [
-          { value: 'normal', count: 1023, percent: 55.39 },
-          { value: 'skip', count: 824, percent: 44.61 }
-        ],
-        tiktokVersionDist: [
-          { value: '43.9.3', count: 1120, percent: 60.64 },
-          { value: '43.1.15', count: 225, percent: 12.18 },
-          { value: '43.6.3', count: 197, percent: 10.67 },
-          { value: '43.1.4', count: 175, percent: 9.47 },
-          { value: '43.1.1', count: 130, percent: 7.04 }
-        ],
-        countryDist: [
-          { value: 'US', count: 1807, percent: 97.83 },
-          { value: 'BR', count: 40, percent: 2.17 }
-        ],
-        phoneServerIpDist: [
-          { value: '10.7.117.117', count: 337, percent: 18.25 },
-          { value: '10.7.169.151', count: 326, percent: 17.65 },
-          { value: '10.7.59.169', count: 321, percent: 17.38 },
-          { value: '10.7.136.129', count: 274, percent: 14.83 },
-          { value: '10.7.8.64', count: 268, percent: 14.51 },
-          { value: '10.7.184.117', count: 238, percent: 12.89 },
-          { value: '10.13.151.168', count: 73, percent: 3.95 },
-          { value: '10.13.161.137', count: 10, percent: 0.54 }
-        ],
-        trafficTotal: 44031584401,
-        trafficAvgPerSuccess: 23839515.11,
-        serverHourly2fa: [
-          {
-            serverIp: '10.7.117.117',
-            total: 337,
-            hourly: [
-              { hour: '08', count: 22 }, { hour: '09', count: 35 }, { hour: '10', count: 41 },
-              { hour: '11', count: 29 }, { hour: '12', count: 24 }, { hour: '13', count: 31 }
-            ]
-          },
-          {
-            serverIp: '10.7.169.151',
-            total: 326,
-            hourly: [
-              { hour: '08', count: 18 }, { hour: '09', count: 32 }, { hour: '10', count: 37 },
-              { hour: '11', count: 30 }, { hour: '12', count: 28 }, { hour: '13', count: 26 }
-            ]
-          }
-        ]
-      };
-      function buildMockOverviewData(dateStr) {
-        var d = dateStr || toYmd(new Date());
-        return {
-          todayRegister: 2579,
-          todayRegisterSuccess: 2016,
-          today2faSuccess: 1847,
-          todayNeedRetention: 935,
-          todayRegisterSuccessRate: 78.17,
-          today2faSetupSuccessRate: 91.62,
-          dailyTrend: [
-            { date: d, label: '今天', register: 2579, twofa: 1847, retention: 935, trafficTotal: 44031584401, trafficAvg: 23839515.11 },
-            { date: d, label: '昨天', register: 2488, twofa: 1765, retention: 902, trafficTotal: 41800311220, trafficAvg: 23682924.49 },
-            { date: d, label: '3/16', register: 2396, twofa: 1698, retention: 876, trafficTotal: 40129004110, trafficAvg: 23633099.00 },
-            { date: d, label: '3/15', register: 2318, twofa: 1630, retention: 841, trafficTotal: 38695410400, trafficAvg: 23739515.58 },
-            { date: d, label: '3/14', register: 2280, twofa: 1588, retention: 803, trafficTotal: 37261033000, trafficAvg: 23464126.83 },
-            { date: d, label: '3/13', register: 2212, twofa: 1522, retention: 775, trafficTotal: 35810021000, trafficAvg: 23528266.75 },
-            { date: d, label: '3/12', register: 2169, twofa: 1480, retention: 744, trafficTotal: 34370019000, trafficAvg: 23222985.81 }
-          ],
-          twofaDetail: Object.assign({}, MOCK_TWOFA_DETAIL)
-        };
-      }
-      if (!trendBars) return;
-
-      function toYmd(d) {
-        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
-      }
-      function fmtNum(n) { return String(n == null ? 0 : n); }
-      function renderDist(list, elId) {
-        var el = document.getElementById(elId);
-        if (!el) return;
-        list = list || [];
-        if (!list.length) {
-          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
-          return;
-        }
-        el.innerHTML = list.map(function(item, idx) {
-          var name = item.value || '未知';
-          var count = item.count || 0;
-          var pct = item.percent != null ? Number(item.percent) : 0;
-          if (pct < 0) pct = 0;
-          if (pct > 100) pct = 100;
-          return '<div class="item-row">' +
-            '<div class="row-head">' +
-            '<div class="left"><span class="rank">' + (idx + 1) + '</span><span class="name" title="' + name + '">' + name + '</span></div>' +
-            '<span class="meta">' + count + ' · ' + pct + '%</span>' +
-            '</div>' +
-            '<div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
-            '</div>';
-        }).join('');
-      }
-      function renderRateDist(list, elId) {
-        var el = document.getElementById(elId);
-        if (!el) return;
-        list = list || [];
-        if (!list.length) {
-          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
-          return;
-        }
-        el.innerHTML = list.map(function(item, idx) {
-          var name = item.value || '未知';
-          var blocked = item.count || 0;
-          var total = item.totalCount || 0;
-          var rate = item.percent != null ? Number(item.percent) : 0;
-          if (rate < 0) rate = 0;
-          if (rate > 100) rate = 100;
-          return '<div class="item-row">' +
-            '<div class="row-head">' +
-            '<div class="left"><span class="rank">' + (idx + 1) + '</span><span class="name" title="' + name + '">' + name + '</span></div>' +
-            '<span class="meta">' + blocked + '/' + total + ' · ' + rate + '%</span>' +
-            '</div>' +
-            '<div class="bar"><div class="fill" style="width:' + rate + '%"></div></div>' +
-            '</div>';
-        }).join('');
-      }
-      function renderMissingRateHint(elId) {
-        var el = document.getElementById(elId);
-        if (!el) return;
-        el.innerHTML = '<div style="color:var(--text-muted);">后端未返回对应封号率字段，请升级后端版本</div>';
-      }
-      function renderPieFromDist(list, pieId, legendId) {
-        var pieEl = document.getElementById(pieId);
-        var legendEl = document.getElementById(legendId);
-        if (!pieEl || !legendEl) return;
-        list = list || [];
-        if (!list.length) {
-          pieEl.style.background = 'conic-gradient(#e5e7eb 0 100%)';
-          pieEl.innerHTML = '';
-          legendEl.innerHTML = '<div style="opacity:.8;">暂无数据</div>';
-          return;
-        }
-        var palette = ['#fb7185', '#f59e0b', '#10b981', '#6366f1', '#06b6d4', '#a855f7', '#f43f5e', '#84cc16'];
-        var top = list.slice(0, 6);
-        var start = 0;
-        var segs = [];
-        var legend = [];
-        top.forEach(function(item, i) {
-          var p = item.percent != null ? Number(item.percent) : 0;
-          var end = Math.min(100, start + p);
-          var color = palette[i % palette.length];
-          segs.push(color + ' ' + start + '% ' + end + '%');
-          var name = item.value || '未知';
-          var cnt = item.count || 0;
-          legend.push(
-            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;">' +
-              '<div style="display:flex;align-items:center;gap:6px;min-width:0;">' +
-                '<span style="width:16px;height:16px;border-radius:999px;background:' + color + ';color:#fff;font-size:0.62rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">' + (i + 1) + '</span>' +
-                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">' + name + '</span>' +
-              '</div>' +
-              '<span style="white-space:nowrap;color:var(--text-muted);font-size:0.72rem;">' + cnt + ' · ' + p + '%</span>' +
-            '</div>'
-          );
-          start = end;
-        });
-        if (start < 100) {
-          segs.push('#e5e7eb ' + start + '% 100%');
-        }
-        pieEl.style.background = 'conic-gradient(' + segs.join(',') + ')';
-        pieEl.innerHTML = '';
-        legendEl.innerHTML = legend.join('');
-      }
-      function fmtGb(bytesVal) {
-        var n = Number(bytesVal);
-        if (!isFinite(n) || n <= 0) return '0 GB';
-        var gb = n / (1024 * 1024 * 1024);
-        return (Math.round(gb * 100) / 100) + ' GB';
-      }
-      function renderRatePie(percent, pieId, labelId, color) {
-        var pieEl = document.getElementById(pieId);
-        var labelEl = document.getElementById(labelId);
-        if (!pieEl || !labelEl) return;
-        var p = Number(percent || 0);
-        if (p < 0) p = 0;
-        if (p > 100) p = 100;
-        pieEl.style.background = 'conic-gradient(' + color + ' 0 ' + p + '%, #e5e7eb ' + p + '% 100%)';
-        labelEl.innerHTML = '成功 ' + p + '%<br>未成功 ' + (Math.round((100 - p) * 100) / 100) + '%';
-      }
-      function renderServerHourly(list) {
-        var wrap = document.getElementById('twofa-server-hourly-list');
-        if (!wrap) return;
-        list = list || [];
-        if (!list.length) {
-          wrap.innerHTML = '<div>暂无数据</div>';
-          return;
-        }
-        wrap.innerHTML = list.map(function(server) {
-          var name = server.serverIp || '未知';
-          var total = server.total || 0;
-          var hourly = server.hourly || [];
-          var points = hourly.filter(function(h) { return (h.count || 0) > 0; })
-            .map(function(h) { return h.hour + ': ' + h.count; });
-          var text = points.length ? points.join(' | ') : '全天 0';
-          return '<div style="padding:8px 10px;border:1px solid rgba(251,113,133,0.18);border-radius:10px;background:rgba(255,255,255,0.78);">' +
-            '<div style="font-weight:600;color:var(--text);margin-bottom:4px;">' + name + ' <span style="color:var(--text-muted);font-weight:500;">(总计 ' + total + ')</span></div>' +
-            '<div style="white-space:nowrap;overflow:auto;padding-bottom:2px;">' + text + '</div>' +
-            '</div>';
-        }).join('');
-      }
-      function render(data) {
-        document.getElementById('stat-today-register').textContent = fmtNum(data.todayRegister);
-        document.getElementById('stat-today-register-success').textContent = fmtNum(data.todayRegisterSuccess);
-        document.getElementById('stat-today-2fa').textContent = fmtNum(data.today2faSuccess);
-        document.getElementById('stat-today-retention').textContent = fmtNum(data.todayNeedRetention);
-        document.getElementById('stat-register-success-rate').textContent = (data.todayRegisterSuccessRate != null ? data.todayRegisterSuccessRate : 0) + '%';
-        document.getElementById('stat-twofa-setup-rate').textContent = (data.today2faSetupSuccessRate != null ? data.today2faSetupSuccessRate : 0) + '%';
-        renderRatePie(data.todayRegisterSuccessRate != null ? data.todayRegisterSuccessRate : 0, 'register-success-rate-pie', 'register-success-rate-pie-label', '#fb7185');
-        renderRatePie(data.today2faSetupSuccessRate != null ? data.today2faSetupSuccessRate : 0, 'twofa-setup-rate-pie', 'twofa-setup-rate-pie-label', '#6366f1');
-
-        // 当 2FA 成功数为 0 时，取消心跳效果，避免无意义动效
-        var twofaCard = document.querySelector('#overview-stats .stat-card.green');
-        if (twofaCard) {
-          if ((data.today2faSuccess || 0) > 0) {
-            twofaCard.classList.add('heartbeat');
-          } else {
-            twofaCard.classList.remove('heartbeat');
-          }
-        }
-
-        var detail = data.twofaDetail || null;
-        var forceMock = /(?:\?|&)mock=1(?:&|$)/.test(location.search || '');
-        var hasRealDist = detail && (
-          (detail.androidVersionDist && detail.androidVersionDist.length) ||
-          (detail.behaviorDist && detail.behaviorDist.length) ||
-          (detail.tiktokVersionDist && detail.tiktokVersionDist.length) ||
-          (detail.countryDist && detail.countryDist.length) ||
-          (detail.phoneServerIpDist && detail.phoneServerIpDist.length)
-        );
-        // 兜底策略：无真实分布数据时自动显示 mock；或通过 ?mock=1 强制显示
-        if (forceMock || !hasRealDist) {
-          detail = Object.assign({}, MOCK_TWOFA_DETAIL);
-        }
-        if (detail) {
-          renderDist(detail.androidVersionDist || [], 'twofa-android-list');
-          renderDist(detail.behaviorDist || [], 'twofa-behavior-list');
-          renderDist(detail.tiktokVersionDist || [], 'twofa-tiktok-list');
-          renderDist(detail.countryDist || [], 'twofa-country-list');
-          renderDist(detail.phoneServerIpDist || [], 'twofa-server-ip-list');
-          renderPieFromDist(detail.androidVersionDist || [], 'twofa-android-pie', 'twofa-android-legend');
-          renderPieFromDist(detail.behaviorDist || [], 'twofa-behavior-pie', 'twofa-behavior-legend');
-          renderPieFromDist(detail.tiktokVersionDist || [], 'twofa-tiktok-pie', 'twofa-tiktok-legend');
-          renderPieFromDist(detail.countryDist || [], 'twofa-country-pie', 'twofa-country-legend');
-          renderPieFromDist(detail.phoneServerIpDist || [], 'twofa-server-pie', 'twofa-server-legend');
-          renderServerHourly(detail.serverHourly2fa || []);
-          var totalText = detail.trafficTotal != null ? fmtGb(detail.trafficTotal) : '-';
-          var avgText = detail.trafficAvgPerSuccess != null ? fmtGb(detail.trafficAvgPerSuccess) : '-';
-          var trafficTotalEl = document.getElementById('traffic-total');
-          var trafficAvgEl = document.getElementById('traffic-avg');
-          if (trafficTotalEl) trafficTotalEl.textContent = totalText;
-          if (trafficAvgEl) trafficAvgEl.textContent = avgText;
-        }
-
-        var trend = data.dailyTrend || [];
-        var maxVal = Math.max(1, Math.max.apply(null, trend.map(function(d) {
-          return Math.max(d.register || 0, d.twofa || 0, d.retention || 0);
-        })));
-        var html = trend.map(function(d, i) {
-          var pctReg = maxVal > 0 ? ((d.register || 0) / maxVal * 100) : 0;
-          var pct2fa = maxVal > 0 ? ((d.twofa || 0) / maxVal * 100) : 0;
-          var pctRet = maxVal > 0 ? ((d.retention || 0) / maxVal * 100) : 0;
-          var label = d.label || d.date;
-          var title = label ? label.replace(/"/g, '&quot;') : '';
-          return '<div class="trend-day' + (i === 6 ? ' today' : '') + '" data-register="' + (d.register || 0) +
-            '" data-twofa="' + (d.twofa || 0) + '" data-retention="' + (d.retention || 0) +
-            '" data-label="' + title + '">' +
-            '<div class="trend-day-bars">' +
-            '<div class="trend-day-bar reg" style="height:' + pctReg + '%"></div>' +
-            '<div class="trend-day-bar twofa" style="height:' + pct2fa + '%"></div>' +
-            '<div class="trend-day-bar ret" style="height:' + pctRet + '%"></div>' +
-            '</div>' +
-            '<div class="vals">' + (d.register || 0) + ' / ' + (d.twofa || 0) + ' / ' + (d.retention || 0) + '</div>' +
-            '<span class="label">' + (label || '') + '</span></div>';
-        }).join('');
-        trendBars.innerHTML = html;
-
-        var tooltip = document.createElement('div');
-        tooltip.className = 'trend-tooltip';
-        tooltip.style.display = 'none';
-        trendBars.appendChild(tooltip);
-
-        trendBars.querySelectorAll('.trend-day').forEach(function(dayEl) {
-          dayEl.addEventListener('mouseenter', function(e) {
-            var reg = this.getAttribute('data-register') || '0';
-            var twofa = this.getAttribute('data-twofa') || '0';
-            var ret = this.getAttribute('data-retention') || '0';
-            var label = this.getAttribute('data-label') || '';
-            tooltip.innerHTML = (label ? label + '<br>' : '') +
-              '注册: ' + reg + ' · 2FA: ' + twofa + ' · 留存: ' + ret;
-            tooltip.style.display = 'block';
-            var rect = trendBars.getBoundingClientRect();
-            var x = (e.clientX - rect.left);
-            tooltip.style.left = x + 'px';
-            tooltip.style.top = '0px';
-          });
-          dayEl.addEventListener('mousemove', function(e) {
-            if (tooltip.style.display === 'none') return;
-            var rect = trendBars.getBoundingClientRect();
-            var x = (e.clientX - rect.left);
-            tooltip.style.left = x + 'px';
-          });
-          dayEl.addEventListener('mouseleave', function() {
-            tooltip.style.display = 'none';
-          });
-        });
-
-        // 七日流量曲线
-        if (trafficBars) {
-          var maxTraffic = Math.max(1, Math.max.apply(null, trend.map(function(d){
-            return d.trafficTotal || 0;
-          })));
-          var html2 = trend.map(function(d,i){
-            var total = d.trafficTotal || 0;
-            var avgT  = d.trafficAvg || 0;
-            var label = d.label || d.date;
-            var title = label ? label.replace(/"/g, '&quot;') : '';
-            var pctTotal = maxTraffic > 0 ? (total / maxTraffic * 100) : 0;
-            var pctAvg   = maxTraffic > 0 ? (avgT   / maxTraffic * 100) : 0;
-            return '<div class="trend-day' + (i === 6 ? ' today' : '') + '" ' +
-              'data-total="' + total + '" data-avg="' + avgT + '" data-label="' + title + '">' +
-              '<div class="trend-day-bars">' +
-              '<div class="trend-day-bar reg" style="height:' + pctTotal + '%"></div>' +
-              '<div class="trend-day-bar ret" style="height:' + pctAvg + '%"></div>' +
-              '</div>' +
-              '<div class="vals">' + fmtGb(total) + ' / ' + fmtGb(avgT) + '</div>' +
-              '<span class="label">' + (label || '') + '</span></div>';
-          }).join('');
-          trafficBars.innerHTML = html2;
-
-          var ttip = document.createElement('div');
-          ttip.className = 'trend-tooltip';
-          ttip.style.display = 'none';
-          trafficBars.appendChild(ttip);
-
-          trafficBars.querySelectorAll('.trend-day').forEach(function(el){
-            el.addEventListener('mouseenter', function(e){
-              var label = this.getAttribute('data-label') || '';
-              var total = this.getAttribute('data-total') || '0';
-              var avgT  = this.getAttribute('data-avg') || '0';
-              ttip.innerHTML = (label ? label + '<br>' : '') +
-                '总流量: ' + fmtGb(total) + ' · 单个平均: ' + fmtGb(avgT);
-              ttip.style.display = 'block';
-              var rect = trafficBars.getBoundingClientRect();
-              var x = (e.clientX - rect.left);
-              ttip.style.left = x + 'px';
-              ttip.style.top = '0px';
-            });
-            el.addEventListener('mousemove', function(e){
-              if (ttip.style.display === 'none') return;
-              var rect = trafficBars.getBoundingClientRect();
-              var x = (e.clientX - rect.left);
-              ttip.style.left = x + 'px';
-            });
-            el.addEventListener('mouseleave', function(){
-              ttip.style.display = 'none';
-            });
-          });
-        }
-      }
-      function loadDailyRegister(dateStr) {
-        if (forceMockPage) {
-          render(buildMockOverviewData(dateStr));
-          return;
-        }
-        var url = '/api/statistics/daily-register';
-        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (res.success && res.data) {
-              var d = res.data;
-              render({
-                todayRegister: d.todayRegister || 0,
-                todayRegisterSuccess: d.todayRegisterSuccess || 0,
-                today2faSuccess: d.today2faSuccess || 0,
-                todayNeedRetention: d.todayNeedRetention || 0,
-                todayRegisterSuccessRate: d.todayRegisterSuccessRate != null ? d.todayRegisterSuccessRate : 0,
-                today2faSetupSuccessRate: d.today2faSetupSuccessRate != null ? d.today2faSetupSuccessRate : 0,
-                dailyTrend: d.dailyTrend || [],
-                twofaDetail: d.twofaDetail || null
-              });
-            } else {
-              document.getElementById('stat-today-register').textContent = '-';
-              document.getElementById('stat-today-register-success').textContent = '-';
-              document.getElementById('stat-today-2fa').textContent = '-';
-              document.getElementById('stat-today-retention').textContent = '-';
-              document.getElementById('stat-register-success-rate').textContent = '-';
-              document.getElementById('stat-twofa-setup-rate').textContent = '-';
-              renderRatePie(0, 'register-success-rate-pie', 'register-success-rate-pie-label', '#fb7185');
-              renderRatePie(0, 'twofa-setup-rate-pie', 'twofa-setup-rate-pie-label', '#6366f1');
-              trendBars.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">暂无数据 ♡</div>';
-            }
-          })
-          .catch(function() {
-            document.getElementById('stat-today-register').textContent = '—';
-            document.getElementById('stat-today-register-success').textContent = '—';
-            document.getElementById('stat-today-2fa').textContent = '—';
-            document.getElementById('stat-today-retention').textContent = '—';
-            document.getElementById('stat-register-success-rate').textContent = '—';
-            document.getElementById('stat-twofa-setup-rate').textContent = '—';
-            renderRatePie(0, 'register-success-rate-pie', 'register-success-rate-pie-label', '#fb7185');
-            renderRatePie(0, 'twofa-setup-rate-pie', 'twofa-setup-rate-pie-label', '#6366f1');
-            trendBars.innerHTML = '<div style="color:var(--error);padding:20px;text-align:center;">加载失败，请检查接口</div>';
-          });
-      }
-      if (dateInput) {
-        var todayStr = toYmd(new Date());
-        var fpOverview = flatpickr(dateInput, {
-          locale: 'zh',
-          dateFormat: 'Y-m-d',
-          defaultDate: todayStr,
-          maxDate: todayStr,
-          allowInput: false,
-          onChange: function(sel, dateStr) { if (dateStr) loadDailyRegister(dateStr); }
-        });
-        var btnToday = document.getElementById('overview-btn-today');
-        if (btnToday) btnToday.addEventListener('click', function() {
-          var t = toYmd(new Date());
-          fpOverview.setDate(t, true);
-          loadDailyRegister(t);
-        });
-      }
-      loadDailyRegister(toYmd(new Date()));
-    })();
-
-    // 加载封号率统计 + 最近7天趋势
-    (function() {
-      var dateInput = document.getElementById('block-rate-date');
-      var trendBars = document.getElementById('block-rate-trend-bars');
-      var forceMockPage = /(?:\?|&)mock=1(?:&|$)/.test(location.search || '');
-      var MOCK_BLOCK_RATE_DATA = {
-        nextDay: { baseDate: '2026-03-18', total: 1847, blocked: 213, blockRate: 11.53, label: '次日封号率' },
-        threeDay: { baseDate: '2026-03-16', total: 1698, blocked: 285, blockRate: 16.78, label: '3天封号率' },
-        sevenDay: { baseDate: '2026-03-12', total: 1480, blocked: 356, blockRate: 24.05, label: '7天封号率' },
-        blockedDetail: {
-          androidVersionDist: [
-            { value: '14', count: 438, percent: 51.59 },
-            { value: '13', count: 386, percent: 45.46 },
-            { value: '12', count: 25, percent: 2.95 }
-          ],
-          behaviorDist: [
-            { value: 'nickname_skip', count: 382, percent: 44.99 },
-            { value: 'nickname_normal', count: 301, percent: 35.45 },
-            { value: 'bio_skip', count: 102, percent: 12.01 },
-            { value: 'bio_normal', count: 64, percent: 7.55 }
-          ],
-          tiktokVersionDist: [
-            { value: '43.9.3', count: 472, percent: 55.59 },
-            { value: '43.1.15', count: 178, percent: 20.97 },
-            { value: '43.6.3', count: 112, percent: 13.19 },
-            { value: '43.1.4', count: 87, percent: 10.25 }
-          ],
-          countryDist: [
-            { value: 'US', count: 804, percent: 94.7 },
-            { value: 'BR', count: 45, percent: 5.3 }
-          ],
-          phoneServerIpDist: [
-            { value: '10.7.117.117', count: 164, percent: 19.32 },
-            { value: '10.7.169.151', count: 153, percent: 18.02 },
-            { value: '10.7.59.169', count: 149, percent: 17.55 },
-            { value: '10.7.136.129', count: 122, percent: 14.37 },
-            { value: '10.7.8.64', count: 114, percent: 13.43 },
-            { value: '10.7.184.117', count: 103, percent: 12.13 },
-            { value: '10.13.151.168', count: 32, percent: 3.77 },
-            { value: '10.13.161.137', count: 12, percent: 1.41 }
-          ]
-        },
-        blockedDetailByPeriod: {
-          nextDay: {
-            androidVersionDist: [{ value: '14', count: 91, percent: 42.72 }, { value: '13', count: 108, percent: 50.7 }, { value: '12', count: 14, percent: 6.57 }],
-            behaviorDist: [{ value: 'nickname_skip', count: 95, percent: 44.6 }, { value: 'nickname_normal', count: 76, percent: 35.68 }, { value: 'bio_skip', count: 25, percent: 11.74 }, { value: 'bio_normal', count: 17, percent: 7.98 }],
-            tiktokVersionDist: [{ value: '43.9.3', count: 118, percent: 55.4 }, { value: '43.1.15', count: 44, percent: 20.66 }, { value: '43.6.3', count: 28, percent: 13.15 }, { value: '43.1.4', count: 23, percent: 10.8 }],
-            countryDist: [{ value: 'US', count: 201, percent: 94.37 }, { value: 'BR', count: 12, percent: 5.63 }],
-            phoneServerIpDist: [{ value: '10.7.117.117', count: 43, percent: 20.19 }, { value: '10.7.169.151', count: 39, percent: 18.31 }, { value: '10.7.59.169', count: 37, percent: 17.37 }]
-          },
-          threeDay: {
-            androidVersionDist: [{ value: '14', count: 152, percent: 53.33 }, { value: '13', count: 122, percent: 42.81 }, { value: '12', count: 11, percent: 3.86 }],
-            behaviorDist: [{ value: 'nickname_skip', count: 123, percent: 43.16 }, { value: 'nickname_normal', count: 104, percent: 36.49 }, { value: 'bio_skip', count: 36, percent: 12.63 }, { value: 'bio_normal', count: 22, percent: 7.72 }],
-            tiktokVersionDist: [{ value: '43.9.3', count: 165, percent: 57.89 }, { value: '43.1.15', count: 60, percent: 21.05 }, { value: '43.6.3', count: 35, percent: 12.28 }, { value: '43.1.4', count: 25, percent: 8.77 }],
-            countryDist: [{ value: 'US', count: 269, percent: 94.39 }, { value: 'BR', count: 16, percent: 5.61 }],
-            phoneServerIpDist: [{ value: '10.7.117.117', count: 56, percent: 19.65 }, { value: '10.7.169.151', count: 51, percent: 17.89 }, { value: '10.7.59.169', count: 49, percent: 17.19 }]
-          },
-          sevenDay: {
-            androidVersionDist: [{ value: '14', count: 195, percent: 54.78 }, { value: '13', count: 156, percent: 43.82 }, { value: '12', count: 5, percent: 1.4 }],
-            behaviorDist: [{ value: 'nickname_skip', count: 164, percent: 46.07 }, { value: 'nickname_normal', count: 121, percent: 33.99 }, { value: 'bio_skip', count: 41, percent: 11.52 }, { value: 'bio_normal', count: 30, percent: 8.43 }],
-            tiktokVersionDist: [{ value: '43.9.3', count: 189, percent: 53.09 }, { value: '43.1.15', count: 74, percent: 20.79 }, { value: '43.6.3', count: 49, percent: 13.76 }, { value: '43.1.4', count: 44, percent: 12.36 }],
-            countryDist: [{ value: 'US', count: 334, percent: 93.82 }, { value: 'BR', count: 22, percent: 6.18 }],
-            phoneServerIpDist: [{ value: '10.7.117.117', count: 65, percent: 18.26 }, { value: '10.7.169.151', count: 63, percent: 17.7 }, { value: '10.7.59.169', count: 63, percent: 17.7 }]
-          }
-        }
-      };
-      var MOCK_BLOCK_TREND_DATA = {
-        trend: [
-          { date: '2026-03-13', label: '03-13', total: 1501, blocked: 301, blockRate: 20.05 },
-          { date: '2026-03-14', label: '03-14', total: 1564, blocked: 287, blockRate: 18.35 },
-          { date: '2026-03-15', label: '03-15', total: 1622, blocked: 274, blockRate: 16.89 },
-          { date: '2026-03-16', label: '03-16', total: 1698, blocked: 285, blockRate: 16.78 },
-          { date: '2026-03-17', label: '03-17', total: 1765, blocked: 262, blockRate: 14.84 },
-          { date: '2026-03-18', label: '03-18', total: 1847, blocked: 213, blockRate: 11.53 },
-          { date: '2026-03-19', label: '03-19', total: 1901, blocked: 198, blockRate: 10.42 }
-        ]
-      };
-      function toYmd(d) {
-        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
-      }
-      function fillDescDatesFromDate(ymd) {
-        var p = (ymd || toYmd(new Date())).split('-');
-        if (p.length < 3) return;
-        var base = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
-        function addDays(n) {
-          var x = new Date(base);
-          x.setDate(x.getDate() - n);
-          return x.getMonth() + 1 + '月' + x.getDate() + '日';
-        }
-        var el1 = document.getElementById('desc-date-1');
-        var el3 = document.getElementById('desc-date-3');
-        var el7 = document.getElementById('desc-date-7');
-        if (el1) el1.textContent = addDays(1);
-        if (el3) el3.textContent = addDays(3);
-        if (el7) el7.textContent = addDays(7);
-      }
-      function fmtDateStr(ymd) {
-        if (!ymd) return '';
-        var p = String(ymd).split('-');
-        if (p.length >= 3) return p[1] + '月' + parseInt(p[2], 10) + '日';
-        return ymd;
-      }
-      function renderDist(list, elId) {
-        var el = document.getElementById(elId);
-        if (!el) return;
-        list = list || [];
-        if (!list.length) {
-          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
-          return;
-        }
-        el.innerHTML = list.map(function(item, idx) {
-          var name = item.value || '未知';
-          var count = item.count || 0;
-          var pct = item.percent != null ? Number(item.percent) : 0;
-          if (pct < 0) pct = 0;
-          if (pct > 100) pct = 100;
-          return '<div class="item-row">' +
-            '<div class="row-head">' +
-            '<div class="left"><span class="rank">' + (idx + 1) + '</span><span class="name" title="' + name + '">' + name + '</span></div>' +
-            '<span class="meta">' + count + ' · ' + pct + '%</span>' +
-            '</div>' +
-            '<div class="bar"><div class="fill" style="width:' + pct + '%"></div></div>' +
-            '</div>';
-        }).join('');
-      }
-      function renderPieFromDist(list, pieId, legendId) {
-        var pieEl = document.getElementById(pieId);
-        var legendEl = document.getElementById(legendId);
-        if (!pieEl || !legendEl) return;
-        list = list || [];
-        if (!list.length) {
-          pieEl.style.background = 'conic-gradient(#e5e7eb 0 100%)';
-          pieEl.innerHTML = '';
-          legendEl.innerHTML = '<div style="opacity:.8;">暂无数据</div>';
-          return;
-        }
-        var palette = ['#fb7185', '#f59e0b', '#10b981', '#6366f1', '#06b6d4', '#a855f7', '#f43f5e', '#84cc16'];
-        var top = list.slice(0, 6);
-        var start = 0;
-        var segs = [];
-        var legend = [];
-        top.forEach(function(item, i) {
-          var p = item.percent != null ? Number(item.percent) : 0;
-          var end = Math.min(100, start + p);
-          var color = palette[i % palette.length];
-          segs.push(color + ' ' + start + '% ' + end + '%');
-          var name = item.value || '未知';
-          var cnt = item.count || 0;
-          legend.push(
-            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;">' +
-              '<div style="display:flex;align-items:center;gap:6px;min-width:0;">' +
-                '<span style="width:16px;height:16px;border-radius:999px;background:' + color + ';color:#fff;font-size:0.62rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;">' + (i + 1) + '</span>' +
-                '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);">' + name + '</span>' +
-              '</div>' +
-              '<span style="white-space:nowrap;color:var(--text-muted);font-size:0.72rem;">' + cnt + ' · ' + p + '%</span>' +
-            '</div>'
-          );
-          start = end;
-        });
-        if (start < 100) {
-          segs.push('#e5e7eb ' + start + '% 100%');
-        }
-        pieEl.style.background = 'conic-gradient(' + segs.join(',') + ')';
-        pieEl.innerHTML = '';
-        legendEl.innerHTML = legend.join('');
-      }
-      function renderBlockRate(data) {
-        var items = [
-          { key: 'nextDay', rateId: 'block-next-day-rate', detailId: 'block-next-day-detail', descId: 'desc-date-1' },
-          { key: 'threeDay', rateId: 'block-three-day-rate', detailId: 'block-three-day-detail', descId: 'desc-date-3' },
-          { key: 'sevenDay', rateId: 'block-seven-day-rate', detailId: 'block-seven-day-detail', descId: 'desc-date-7' }
-        ];
-        items.forEach(function(it) {
-          var d = data[it.key];
-          if (!d) return;
-          document.getElementById(it.rateId).textContent = (d.blockRate != null ? d.blockRate : 0) + '%';
-          document.getElementById(it.detailId).textContent = d.baseDate + ' 共' + d.total + ' 封' + d.blocked;
-          var descEl = document.getElementById(it.descId);
-          if (descEl) descEl.textContent = fmtDateStr(d.baseDate);
-        });
-
-        // 根据封号率给卡片加/去掉 alert 效果
-        ['block-next-day-rate','block-three-day-rate','block-seven-day-rate'].forEach(function(id){
-          var el = document.getElementById(id);
-          if (!el) return;
-          var card = el.closest('.stat-card');
-          if (!card) return;
-          var val = parseFloat((el.textContent || '').replace('%','')) || 0;
-          if (val >= 30) card.classList.add('alert');
-          else card.classList.remove('alert');
-        });
-
-        var selectedKey = window.__blockPeriodKey || 'nextDay';
-        var currentItem = data[selectedKey] || null;
-        var labelEl = document.getElementById('block-period-label');
-        var blockedEl = document.getElementById('block-period-blocked');
-        var totalEl = document.getElementById('block-period-total');
-        var rateEl = document.getElementById('block-period-rate');
-        if (currentItem) {
-          if (labelEl) labelEl.textContent = currentItem.label || selectedKey;
-          if (blockedEl) blockedEl.textContent = currentItem.blocked != null ? currentItem.blocked : 0;
-          if (totalEl) totalEl.textContent = currentItem.total != null ? currentItem.total : 0;
-          if (rateEl) rateEl.textContent = (currentItem.blockRate != null ? currentItem.blockRate : 0) + '%';
-        }
-
-        var byPeriod = data.blockedDetailByPeriod || {};
-        var bd = byPeriod[selectedKey] || data.blockedDetail || {};
-        renderDist(bd.androidVersionDist || [], 'block-android-list');
-        renderDist(bd.behaviorDist || [], 'block-behavior-list');
-        renderDist(bd.tiktokVersionDist || [], 'block-tiktok-list');
-        renderDist(bd.countryDist || [], 'block-country-list');
-        renderDist(bd.phoneServerIpDist || [], 'block-server-ip-list');
-        var hasRateDistFields =
-          Object.prototype.hasOwnProperty.call(bd, 'androidVersionRateDist') ||
-          Object.prototype.hasOwnProperty.call(bd, 'behaviorRateDist') ||
-          Object.prototype.hasOwnProperty.call(bd, 'tiktokVersionRateDist') ||
-          Object.prototype.hasOwnProperty.call(bd, 'countryRateDist') ||
-          Object.prototype.hasOwnProperty.call(bd, 'phoneServerIpRateDist');
-        if (hasRateDistFields) {
-          renderRateDist(bd.androidVersionRateDist || [], 'block-rate-android-list');
-          renderRateDist(bd.behaviorRateDist || [], 'block-rate-behavior-list');
-          renderRateDist(bd.tiktokVersionRateDist || [], 'block-rate-tiktok-list');
-          renderRateDist(bd.countryRateDist || [], 'block-rate-country-list');
-          renderRateDist(bd.phoneServerIpRateDist || [], 'block-rate-server-ip-list');
-        } else {
-          renderMissingRateHint('block-rate-android-list');
-          renderMissingRateHint('block-rate-behavior-list');
-          renderMissingRateHint('block-rate-tiktok-list');
-          renderMissingRateHint('block-rate-country-list');
-          renderMissingRateHint('block-rate-server-ip-list');
-        }
-        renderPieFromDist(bd.androidVersionDist || [], 'block-android-pie', 'block-android-legend');
-        renderPieFromDist(bd.behaviorDist || [], 'block-behavior-pie', 'block-behavior-legend');
-        renderPieFromDist(bd.tiktokVersionDist || [], 'block-tiktok-pie', 'block-tiktok-legend');
-        renderPieFromDist(bd.countryDist || [], 'block-country-pie', 'block-country-legend');
-        renderPieFromDist(bd.phoneServerIpDist || [], 'block-server-pie', 'block-server-legend');
-
-        var btnMap = {
-          nextDay: document.getElementById('btn-block-next-day'),
-          threeDay: document.getElementById('btn-block-three-day'),
-          sevenDay: document.getElementById('btn-block-seven-day')
-        };
-        Object.keys(btnMap).forEach(function(k) {
-          var b = btnMap[k];
-          if (!b) return;
-          if (k === selectedKey) {
-            b.classList.remove('ghost');
-            b.classList.add('primary');
-          } else {
-            b.classList.remove('primary');
-            b.classList.add('ghost');
-          }
-        });
-      }
-      function renderBlockTrend(data) {
-        if (!trendBars) return;
-        var list = (data && data.trend) || [];
-        if (!list.length) {
-          trendBars.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">暂无趋势数据 ♡</div>';
-          return;
-        }
-        var maxRate = Math.max(1, Math.max.apply(null, list.map(function(it) {
-          return (it.blockRate != null ? it.blockRate : 0);
-        })));
-        var html = list.map(function(it, idx) {
-          var rate = it.blockRate != null ? it.blockRate : 0;
-          var pct = maxRate > 0 ? (rate / maxRate * 100) : 0;
-          var label = it.label || it.date;
-          return '<div class="trend-day' + (idx === list.length - 1 ? ' today' : '') + '" ' +
-            'data-rate="' + rate + '" data-total="' + (it.total || 0) + '" data-blocked="' + (it.blocked || 0) + '" data-label="' + (label || '') + '">' +
-            '<div class="trend-day-bars">' +
-            '<div class="trend-day-bar twofa" style="height:' + pct + '%"></div>' +
-            '</div>' +
-            '<div class="vals">' + rate + '%</div>' +
-            '<span class="label">' + (label || '') + '</span></div>';
-        }).join('');
-        trendBars.innerHTML = html;
-        // 悬停提示：显示封号率 + 总数/封禁数
-        var tooltip = document.createElement('div');
-        tooltip.className = 'trend-tooltip';
-        tooltip.style.display = 'none';
-        trendBars.appendChild(tooltip);
-
-        trendBars.querySelectorAll('.trend-day').forEach(function(el){
-          el.addEventListener('mouseenter', function(e){
-            var label = this.getAttribute('data-label') || '';
-            var rate  = this.getAttribute('data-rate') || '0';
-            var total = this.getAttribute('data-total') || '0';
-            var blocked = this.getAttribute('data-blocked') || '0';
-            tooltip.innerHTML = (label ? label + '<br>' : '') +
-              '封号率: ' + rate + '% · 总数: ' + total + ' · 封禁: ' + blocked;
-            tooltip.style.display = 'block';
-            var rect = trendBars.getBoundingClientRect();
-            var x = (e.clientX - rect.left);
-            tooltip.style.left = x + 'px';
-            tooltip.style.top = '0px';
-          });
-          el.addEventListener('mousemove', function(e){
-            if (tooltip.style.display === 'none') return;
-            var rect = trendBars.getBoundingClientRect();
-            var x = (e.clientX - rect.left);
-            tooltip.style.left = x + 'px';
-          });
-          el.addEventListener('mouseleave', function(){
-            tooltip.style.display = 'none';
-          });
-        });
-      }
-      function loadBlockRate(dateStr) {
-        if (forceMockPage) {
-          renderBlockRate(MOCK_BLOCK_RATE_DATA);
-          renderBlockTrend(MOCK_BLOCK_TREND_DATA);
-          fillDescDatesFromDate(dateStr);
-          return;
-        }
-        var url = '/api/statistics/block-rate';
-        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (res.success && res.data) renderBlockRate(res.data);
-            else {
-              document.getElementById('block-next-day-rate').textContent = '-';
-              document.getElementById('block-three-day-rate').textContent = '-';
-              document.getElementById('block-seven-day-rate').textContent = '-';
-              fillDescDatesFromDate(dateStr);
-            }
-          })
-          .catch(function() {
-            document.getElementById('block-next-day-rate').textContent = '—';
-            document.getElementById('block-three-day-rate').textContent = '—';
-            document.getElementById('block-seven-day-rate').textContent = '—';
-            fillDescDatesFromDate(dateStr);
-          });
-        // 同时刷新最近7天封号率趋势（与卡片无强关联）
-        var trendUrl = '/api/statistics/block-rate-trend';
-        if (dateStr) trendUrl += '?date=' + encodeURIComponent(dateStr);
-        if (trendBars) {
-          fetch(trendUrl)
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
-              if (res.success && res.data) renderBlockTrend(res.data);
-              else renderBlockTrend(null);
-            })
-            .catch(function() {
-              renderBlockTrend(null);
-            });
-        }
-      }
-      if (dateInput) {
-        var todayStr = toYmd(new Date());
-        var fpBlock = flatpickr(dateInput, {
-          locale: 'zh',
-          dateFormat: 'Y-m-d',
-          defaultDate: todayStr,
-          maxDate: todayStr,
-          allowInput: false,
-          onChange: function(sel, dateStr) { if (dateStr) loadBlockRate(dateStr); }
-        });
-        var brBtnToday = document.getElementById('block-rate-btn-today');
-        if (brBtnToday) brBtnToday.addEventListener('click', function() {
-          var t = toYmd(new Date());
-          fpBlock.setDate(t, true);
-          loadBlockRate(t);
-        });
-      }
-      function bindBlockPeriodButtons() {
-        var m = {
-          'btn-block-next-day': 'nextDay',
-          'btn-block-three-day': 'threeDay',
-          'btn-block-seven-day': 'sevenDay'
-        };
-        Object.keys(m).forEach(function(id) {
-          var el = document.getElementById(id);
-          if (!el) return;
-          el.addEventListener('click', function() {
-            window.__blockPeriodKey = m[id];
-            var d = dateInput && dateInput.value ? dateInput.value : toYmd(new Date());
-            loadBlockRate(d);
-          });
-        });
-      }
-      window.__blockPeriodKey = 'nextDay';
-      bindBlockPeriodButtons();
-      loadBlockRate(toYmd(new Date()));
-    })();
-
-    // 任务列表页：列表 + 编辑/恢复
-    (function() {
-      var tbody = document.getElementById('task-table-body');
-      var editTaskId = document.getElementById('edit-task-id');
-      var taskPageInfo = document.getElementById('task-page-info');
-      var taskPrevBtn = document.getElementById('task-prev');
-      var taskNextBtn = document.getElementById('task-next');
-      var taskPageSizeSel = document.getElementById('task-page-size');
-      var taskQueryBtn = document.getElementById('task-query-btn');
-      var taskPage = 1;
-      var taskSize = taskPageSizeSel ? parseInt(taskPageSizeSel.value, 10) || 50 : 50;
-      var taskTotalPages = 1;
-      if (!tbody || !editTaskId) return;
-
-      function statusBadge(status) {
-        var cls = 'status ';
-        switch (status) {
-          case 'RUNNING': cls += 'running'; break;
-          case 'COMPLETED': cls += 'completed'; break;
-          case 'PENDING': cls += 'pending'; break;
-          case 'FAILED': cls += 'failed'; break;
-          case 'STOPPED': cls += 'stopped'; break;
-          default: cls += 'pending';
-        }
-        return '<span class="' + cls + '">' + (status || '-') + '</span>';
-      }
-
-      function fmtTime(t) {
-        if (!t) return '-';
-        return t.replace('T', ' ').substring(0, 19);
-      }
-
-      function updateTaskPager(total) {
-        total = Number(total || 0);
-        taskTotalPages = Math.max(1, Math.ceil(total / taskSize));
-        if (taskPage > taskTotalPages) taskPage = taskTotalPages;
-        if (taskPageInfo) taskPageInfo.textContent = '第 ' + taskPage + ' / ' + taskTotalPages + ' 页';
-        if (taskPrevBtn) taskPrevBtn.disabled = taskPage <= 1;
-        if (taskNextBtn) taskNextBtn.disabled = taskPage >= taskTotalPages;
-      }
-
-      function loadTasks() {
-        var url = '/api/tt-register/tasks?page=' + encodeURIComponent(taskPage) + '&size=' + encodeURIComponent(taskSize);
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (!res.success) {
-              tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--error);">加载失败：' + (res.message || '未知错误') + '</td></tr>';
-              updateTaskPager(0);
-              return;
-            }
-            var payload = res.data || {};
-            var list = payload.list || [];
-            // 后端分页结构：data = { list, total, page, size, totalPages, totalElements }
-            var total = (typeof payload.total !== 'undefined' ? payload.total : payload.totalElements) || 0;
-            updateTaskPager(total);
-            if (!list.length) {
-              tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">当前没有运行中的任务～</td></tr>';
-              return;
-            }
-            tbody.innerHTML = list.map(function(t) {
-              var rowCls = (t.status === 'RUNNING' ? ' class="task-running"' : '');
-              var phones = (t.phoneIds && t.phoneIds.length) ? t.phoneIds.join(',') : '-';
-              return '<tr' + rowCls + ' data-task-id="' + t.taskId + '" data-server-ip="' + (t.serverIp || '') + '">' +
-                '<td>' + t.taskId + '</td>' +
-                '<td>' + statusBadge(t.status) + '</td>' +
-                '<td>' + (t.serverIp || '-') + '</td>' +
-                '<td>' + phones + '</td>' +
-                '<td>' + (t.successCount || 0) + ' / ' + (t.failCount || 0) + '</td>' +
-                '<td>' + fmtTime(t.startTime) + '</td>' +
-                '<td>' + fmtTime(t.endTime) + '</td>' +
-                '<td><button type="button" class="ui-btn ghost btn-stop-task" data-id="' + t.taskId + '">停止</button></td>' +
-              '</tr>';
-            }).join('');
-
-            tbody.querySelectorAll('tr').forEach(function(tr) {
-              tr.addEventListener('click', function(e) {
-                if (e.target && e.target.classList.contains('btn-stop-task')) return;
-                var tid = this.getAttribute('data-task-id');
-                if (!tid) return;
-                editTaskId.value = tid;
-              });
-            });
-
-            tbody.querySelectorAll('.btn-stop-task').forEach(function(btn) {
-              btn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                var tid = this.getAttribute('data-id');
-                if (!tid) return;
-                fetch('/api/tt-register/stop/' + encodeURIComponent(tid), { method: 'POST' })
-                  .then(function(r) { return r.json(); })
-                  .then(function(res2) {
-                    alert(res2.message || (res2.success ? '任务已停止' : '停止失败'));
-                    loadTasks();
-                  })
-                  .catch(function() {
-                    alert('停止任务失败，请稍后重试');
-                  });
-              });
-            });
-          })
-          .catch(function() {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--error);">加载任务列表失败</td></tr>';
-            updateTaskPager(0);
-          });
-      }
-
-      function collectEditForm() {
-        var data = { taskId: editTaskId.value.trim() };
-        var v;
-        v = document.getElementById('edit-country').value.trim(); if (v) data.country = v;
-        v = document.getElementById('edit-sdk').value.trim(); if (v) data.sdk = v;
-        v = document.getElementById('edit-image-path').value.trim(); if (v) data.imagePath = v;
-        v = document.getElementById('edit-gaid-tag').value.trim(); if (v) data.gaidTag = v;
-        v = document.getElementById('edit-dynamic-ip').value.trim(); if (v) data.dynamicIpChannel = v;
-        v = document.getElementById('edit-static-ip').value.trim(); if (v) data.staticIpChannel = v;
-        v = document.getElementById('edit-biz').value.trim(); if (v) data.biz = v;
-        v = document.getElementById('edit-target-count').value.trim(); if (v) data.targetCount = v;
-        return data;
-      }
-
-      var btnSave = document.getElementById('btn-task-save');
-      var btnResume = document.getElementById('btn-task-resume');
-      if (taskPageSizeSel) {
-        taskPageSizeSel.addEventListener('change', function() {
-          var v = parseInt(this.value, 10);
-          if (!v || v < 1) v = 50;
-          taskSize = v;
-        });
-      }
-      if (taskQueryBtn) {
-        taskQueryBtn.addEventListener('click', function() {
-          var v = taskPageSizeSel ? parseInt(taskPageSizeSel.value, 10) : taskSize;
-          if (!v || v < 1) v = 50;
-          taskSize = v;
-          taskPage = 1;
-          loadTasks();
-        });
-      }
-      if (taskPrevBtn) {
-        taskPrevBtn.addEventListener('click', function() {
-          if (taskPage <= 1) return;
-          taskPage--;
-          loadTasks();
-        });
-      }
-      if (taskNextBtn) {
-        taskNextBtn.addEventListener('click', function() {
-          if (taskPage >= taskTotalPages) return;
-          taskPage++;
-          loadTasks();
-        });
-      }
-
-      if (btnSave) {
-        btnSave.addEventListener('click', function() {
-          if (!editTaskId.value.trim()) {
-            alert('请先在上面的列表中点击一个任务～');
-            return;
-          }
-          var payload = collectEditForm();
-          fetch('/api/tt-register/task/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          })
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
-              alert(res.message || (res.success ? '保存成功' : '保存失败'));
-            })
-            .catch(function() { alert('保存失败，请稍后重试'); });
-        });
-      }
-
-      if (btnResume) {
-        btnResume.addEventListener('click', function() {
-          var tid = editTaskId.value.trim();
-          if (!tid) {
-            alert('请先在上面的列表中点击一个任务～');
-            return;
-          }
-          fetch('/api/tt-register/task/resume/' + encodeURIComponent(tid), { method: 'POST' })
-            .then(function(r) { return r.json(); })
-            .then(function(res) {
-              alert(res.message || (res.success ? '任务已恢复' : '恢复失败'));
-              loadTasks();
-            })
-            .catch(function() { alert('恢复失败，请稍后重试'); });
-        });
-      }
-
-      loadTasks();
-    })();
-
-    // 留存信息：按日期加载留存记录
-    (function() {
-      var dateInput = document.getElementById('retention-date');
-      var tbody = document.getElementById('ret-tbody');
-      var retPageInfo = document.getElementById('ret-page-info');
-      var retPrevBtn = document.getElementById('ret-prev');
-      var retNextBtn = document.getElementById('ret-next');
-      var retPageSizeSel = document.getElementById('ret-page-size');
-      var retQueryBtn = document.getElementById('ret-query-btn');
-      var retPage = 1;
-      var retSize = retPageSizeSel ? parseInt(retPageSizeSel.value, 10) || 50 : 50;
-      var retTotalPages = 1;
-      function toYmd(d) {
-        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
-        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
-      }
-      function updateRetPager(total) {
-        total = Number(total || 0);
-        retTotalPages = Math.max(1, Math.ceil(total / retSize));
-        if (retPage > retTotalPages) retPage = retTotalPages;
-        if (retPageInfo) retPageInfo.textContent = '第 ' + retPage + ' / ' + retTotalPages + ' 页';
-        if (retPrevBtn) retPrevBtn.disabled = retPage <= 1;
-        if (retNextBtn) retNextBtn.disabled = retPage >= retTotalPages;
-      }
-      function loadRetention(dateStr) {
-        if (!tbody) return;
-        var params = [];
-        if (dateStr) params.push('date=' + encodeURIComponent(dateStr));
-        params.push('page=' + encodeURIComponent(retPage));
-        params.push('size=' + encodeURIComponent(retSize));
-        var url = '/api/statistics/retention-records?' + params.join('&');
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">加载中…</td></tr>';
-        fetch(url)
-          .then(function(r) { return r.json(); })
-          .then(function(res) {
-            if (!res.success || !res.data) {
-              tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--error);">加载失败～</td></tr>';
-              updateRetPager(0);
-              return;
-            }
-            var d = res.data;
-            updateRetPager(d.total || 0);
-            document.getElementById('ret-total').textContent = d.total || 0;
-            document.getElementById('ret-script-ok').textContent = d.scriptSuccessCount || 0;
-            document.getElementById('ret-success-rate').textContent = (d.successRate != null ? d.successRate : 0) + '%';
-            document.getElementById('ret-backup-ok').textContent = d.backupSuccessCount || 0;
-            document.getElementById('ret-backup-rate').textContent = (d.backupRate != null ? d.backupRate : 0) + '%';
-            document.getElementById('ret-2fa-success').textContent = d.retention2faSuccess != null ? d.retention2faSuccess : 0;
-            document.getElementById('ret-logout').textContent = d.retentionLogout != null ? d.retentionLogout : 0;
-            // 当日 cohort & 全部 cohort 封号情况
-            var ct = d.cohortTotal != null ? d.cohortTotal : 0;
-            var cb = d.cohortBlocked != null ? d.cohortBlocked : 0;
-            var clo = d.cohortLogout != null ? d.cohortLogout : 0;
-            var cr = d.cohortBlockRate != null ? d.cohortBlockRate + '%' : '0%';
-            var act = d.allCohortTotal != null ? d.allCohortTotal : 0;
-            var acb = d.allCohortBlocked != null ? d.allCohortBlocked : 0;
-            var aclo = d.allCohortLogout != null ? d.allCohortLogout : 0;
-            var acr = d.allCohortBlockRate != null ? d.allCohortBlockRate + '%' : '0%';
-            var elCt = document.getElementById('ret-cohort-total');
-            var elCb = document.getElementById('ret-cohort-blocked');
-            var elClo = document.getElementById('ret-cohort-logout');
-            var elCr = document.getElementById('ret-cohort-rate');
-            var elAct = document.getElementById('ret-all-cohort-total');
-            var elAcb = document.getElementById('ret-all-cohort-blocked');
-            var elAclo = document.getElementById('ret-all-cohort-logout');
-            var elAcr = document.getElementById('ret-all-cohort-rate');
-            if (elCt) elCt.textContent = ct;
-            if (elCb) elCb.textContent = cb;
-            if (elClo) elClo.textContent = clo;
-            if (elCr) elCr.textContent = cr;
-            if (elAct) elAct.textContent = act;
-            if (elAcb) elAcb.textContent = acb;
-            if (elAclo) elAclo.textContent = aclo;
-            if (elAcr) elAcr.textContent = acr;
-            var heartsWrap = document.getElementById('ret-hearts');
-            if (heartsWrap) {
-              heartsWrap.innerHTML = '';
-              if ((d.successRate || 0) >= 60) {
-                var count = d.successRate >= 90 ? 3 : (d.successRate >= 75 ? 2 : 1);
-                for (var i = 0; i < count; i++) {
-                  var span = document.createElement('span');
-                  span.textContent = '♡';
-                  span.style.left = (20 + i * 16) + '%';
-                  span.style.animationDelay = (i * 0.25) + 's';
-                  heartsWrap.appendChild(span);
-                }
-              }
-            }
-            var list = d.records || [];
-            if (!list.length) {
-              tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">这一天还没有留存记录～</td></tr>';
-              return;
-            }
-            tbody.innerHTML = list.map(function(row) {
-              var scriptOk = row.scriptSuccess === true || row.scriptSuccess === 1;
-              var backupOk = row.backupSuccess === true || row.backupSuccess === 1;
-              return '<tr>' +
-                '<td>' + (row.taskId || '-') + '</td>' +
-                '<td>' + (row.phoneServerIp || '-') + ' / ' + (row.phoneId || '-') + '</td>' +
-                '<td>' + (row.accountRegisterId != null ? row.accountRegisterId : '-') + '</td>' +
-                '<td>' + (row.gaid || '-') + '</td>' +
-                '<td><span class="status ' + (scriptOk ? 'success' : 'failed') + '">' + (scriptOk ? '成功' : '失败') + '</span></td>' +
-                '<td><span class="status ' + (backupOk ? 'success' : 'failed') + '">' + (backupOk ? '成功' : '失败') + '</span></td>' +
-                '<td class="time">' + (row.createdAt || '-') + '</td>' +
-              '</tr>';
-            }).join('');
-          })
-          .catch(function() {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--error);">加载失败，请稍后重试</td></tr>';
-            updateRetPager(0);
-          });
-      }
-      if (dateInput) {
-        var todayStr = toYmd(new Date());
-        var fpRet = flatpickr(dateInput, {
-          locale: 'zh',
-          dateFormat: 'Y-m-d',
-          defaultDate: todayStr,
-          maxDate: todayStr,
-          allowInput: false,
-          onChange: function(sel, dateStr) { if (dateStr) loadRetention(dateStr); }
-        });
-        var btnToday = document.getElementById('retention-btn-today');
-        if (btnToday) btnToday.addEventListener('click', function() {
-          var t = toYmd(new Date());
-          fpRet.setDate(t, true);
-          retPage = 1;
-          loadRetention(t);
-        });
-        if (retPageSizeSel) {
-          retPageSizeSel.addEventListener('change', function() {
-            var v = parseInt(this.value, 10);
-            if (!v || v < 1) v = 50;
-            retSize = v;
-          });
-        }
-        if (retQueryBtn) {
-          retQueryBtn.addEventListener('click', function() {
-            var v = retPageSizeSel ? parseInt(retPageSizeSel.value, 10) : retSize;
-            if (!v || v < 1) v = 50;
-            retSize = v;
-            retPage = 1;
-            var d = dateInput.value || todayStr;
-            loadRetention(d);
-          });
-        }
-        if (retPrevBtn) {
-          retPrevBtn.addEventListener('click', function() {
-            if (retPage <= 1) return;
-            retPage--;
-            var d = dateInput.value || todayStr;
-            loadRetention(d);
-          });
-        }
-        if (retNextBtn) {
-          retNextBtn.addEventListener('click', function() {
-            if (retPage >= retTotalPages) return;
-            retPage++;
-            var d = dateInput.value || todayStr;
-            loadRetention(d);
-          });
-        }
-        // 初次进入默认查今天
-        loadRetention(todayStr);
-      }
-    })();
-  </script>
+  <script src="/console/bootstrap.js"></script>
 </body>
 </html>

@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TT Farm Console - 批量养号控制中心</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+  <style>
+    :root {
+      --glass: rgba(255, 255, 255, 0.5);
+      --glass-border: rgba(255, 255, 255, 0.65);
+      --glass-hover: rgba(255, 255, 255, 0.6);
+      --text: #6b4c5a;
+      --text-muted: #a68a97;
+      --accent: #f9a8d4;
+      --accent-2: #fbcfe8;
+      --success: #86efac;
+      --warning: #fde047;
+      --error: #fda4af;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--text);
+      background: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(249, 168, 212, 0.25), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 50%, rgba(251, 207, 232, 0.3), transparent),
+        radial-gradient(ellipse 50% 50% at 0% 80%, rgba(254, 240, 248, 0.4), transparent),
+        linear-gradient(180deg, #fef7ff 0%, #fdf2f8 50%, #fce7f3 100%);
+    }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 240px; padding: 28px 0; flex-shrink: 0;
+      background: var(--glass); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border-right: 1px solid var(--glass-border);
+      border-radius: 0 24px 24px 0;
+    }
+    .logo {
+      position: relative;
+      display: flex; align-items: center; gap: 12px;
+      padding: 6px 24px 22px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.55);
+      overflow: hidden;
+    }
+    .logo::before{
+      content:'';
+      position:absolute;
+      left:-40px; top:-34px;
+      width: 220px; height: 120px;
+      background:
+        radial-gradient(closest-side at 35% 45%, rgba(249,168,212,0.35), transparent 70%),
+        radial-gradient(closest-side at 75% 25%, rgba(251,207,232,0.35), transparent 72%);
+      filter: blur(2px);
+      transform: rotate(-6deg);
+      pointer-events:none;
+    }
+    .logo::after{
+      content:'';
+      position:absolute;
+      left: 24px; right: 24px; bottom: 10px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(249,168,212,0.65), transparent);
+      opacity: 0.8;
+      pointer-events:none;
+    }
+    .logo-mark {
+      width: 34px; height: 34px; border-radius: 12px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(249,168,212,0.95), rgba(251,207,232,0.9));
+      box-shadow:
+        0 10px 26px rgba(249,168,212,0.22),
+        inset 0 0 0 1px rgba(255,255,255,0.75);
+      position: relative;
+      flex: 0 0 auto;
+      overflow: hidden;
+      animation: logoPulse 4s ease-in-out infinite;
+    }
+    .logo-mark::before{
+      content:'';
+      position:absolute;
+      inset: 4px;
+      border-radius: 10px;
+      background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.9), rgba(255,255,255,0.15) 55%, rgba(255,255,255,0.05) 100%);
+      opacity: 0.9;
+      pointer-events:none;
+    }
+    .logo-mark::after {
+      content: '♧';
+      position: relative;
+      z-index: 1;
+      font-size: 1.05rem;
+      color: rgba(107,39,71,0.9);
+      transform: translateY(-0.5px);
+      text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+    }
+    .brand-text{ display:flex; flex-direction:column; gap: 2px; min-width: 0; }
+    .brand-title{
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.22rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      background: linear-gradient(135deg, rgba(249,168,212,1), rgba(251,207,232,1));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-decoration: none;
+    }
+    .brand-title:hover { opacity: 0.88; }
+    .brand-sub{
+      font-size: 0.74rem;
+      color: rgba(166,138,151,0.95);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @keyframes logoPulse {
+      0%   { transform: translateY(0) scale(1); box-shadow: 0 10px 26px rgba(249,168,212,0.22), inset 0 0 0 1px rgba(255,255,255,0.75); }
+      40%  { transform: translateY(-1px) scale(1.04); box-shadow: 0 14px 30px rgba(249,168,212,0.30), inset 0 0 0 1px rgba(255,255,255,0.9); }
+      70%  { transform: translateY(0) scale(0.99); box-shadow: 0 8px 20px rgba(249,168,212,0.18), inset 0 0 0 1px rgba(255,255,255,0.75); }
+      100% { transform: translateY(0) scale(1); box-shadow: 0 10px 26px rgba(249,168,212,0.22), inset 0 0 0 1px rgba(255,255,255,0.75); }
+    }
+    .back-home {
+      display: block; padding: 10px 24px; margin: 2px 12px 14px;
+      font-size: 0.8rem; color: var(--text-muted); text-decoration: none;
+      border-radius: 12px; transition: all 0.25s ease;
+    }
+    .back-home:hover { color: var(--accent); background: rgba(249, 168, 212, 0.2); }
+    .back-home::before { content: '← '; }
+    .nav-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 24px; color: var(--text-muted); cursor: pointer;
+      transition: all 0.25s ease; margin: 0 12px; border-radius: 14px;
+    }
+    .nav-item:hover { color: var(--text); background: var(--glass-hover); }
+    .nav-item.active { color: var(--accent); background: rgba(249, 168, 212, 0.25); }
+    .nav-item .icon { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+    .nav-item.active .icon { opacity: 1; box-shadow: 0 0 12px currentColor; }
+    .nav-item .nav-emoji { font-size: 0.9em; opacity: 0.8; }
+    .main { flex: 1; padding: 32px; overflow-y: auto; position: relative; }
+    .page-view {
+      display: none;
+      animation: page-in 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    .page-view.active {
+      display: block;
+    }
+    .page-view.leaving {
+      animation: page-out 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes page-in {
+      from { opacity: 0; transform: translateY(12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes page-out {
+      from { opacity: 1; transform: translateY(0) scale(1); }
+      to { opacity: 0; transform: translateY(-8px) scale(0.99); }
+    }
+    .header { margin-bottom: 32px; }
+    .header h1 { font-family: 'Outfit', sans-serif; font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
+    .header .sub { font-size: 0.875rem; color: var(--text-muted); margin-top: 6px; }
+    .header .sub-emoji { font-size: 0.8rem; color: var(--accent); margin-top: 4px; font-style: italic; }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 28px; }
+    .stat-card {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px;
+      transition: all 0.3s ease;
+    }
+    .stat-card:hover {
+      background: var(--glass-hover); border-color: rgba(255, 255, 255, 0.75);
+      transform: translateY(-4px); box-shadow: 0 20px 40px rgba(249, 168, 212, 0.1);
+    }
+    .stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
+    .stat-card .label-emoji { font-size: 0.7rem; opacity: 0.7; }
+    .stat-card .value {
+      font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-card.green .value { color: #16a34a; -webkit-text-fill-color: #16a34a; }
+    .stat-card.orange .value { color: #ca8a04; -webkit-text-fill-color: #ca8a04; }
+    .stat-card.purple .value { color: #db2777; -webkit-text-fill-color: #db2777; }
+    .gauge-section {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; margin-bottom: 24px;
+    }
+    .gauge-section .section-title { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px; }
+    .gauge-row { display: flex; gap: 32px; flex-wrap: wrap; }
+    .gauge { flex: 1; min-width: 120px; text-align: center; }
+    .gauge-circle {
+      width: 72px; height: 72px; margin: 0 auto 10px; border-radius: 50%;
+      background: conic-gradient(var(--accent) calc(var(--p) * 1%), rgba(249, 168, 212, 0.3) calc(var(--p) * 1%));
+      display: flex; align-items: center; justify-content: center; padding: 4px;
+    }
+    .gauge-circle::after { content: ''; width: 56px; height: 56px; background: rgba(255, 255, 255, 0.9); border-radius: 50%; }
+    .gauge .label { font-size: 0.75rem; color: var(--text-muted); }
+    .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .panel {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; overflow: hidden;
+    }
+    .panel-header {
+      padding: 18px 24px; border-bottom: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.5);
+    }
+    .panel-title { font-family: 'Outfit', sans-serif; font-size: 0.95rem; font-weight: 600; }
+    .panel-body { padding: 0; max-height: 320px; overflow-y: auto; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .data-table th {
+      text-align: left; padding: 14px 20px; color: var(--text-muted); font-weight: 500;
+      font-size: 0.75rem; border-bottom: 1px solid var(--glass-border);
+    }
+    .data-table td { padding: 14px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.5); }
+    .data-table tr:hover td { background: rgba(255, 255, 255, 0.4); }
+    .status { display: inline-block; padding: 4px 10px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+    .status.running { background: rgba(134, 239, 172, 0.35); color: #16a34a; }
+    .status.completed { background: rgba(251, 207, 232, 0.4); color: #db2777; }
+    .status.pending { background: rgba(249, 168, 212, 0.3); color: var(--accent); }
+    .status.failed, .status.stopped { background: rgba(253, 164, 175, 0.35); color: var(--error); }
+    .status.success { background: rgba(134, 239, 172, 0.35); color: #16a34a; }
+    .panel-full { grid-column: 1 / -1; }
+    .time { color: var(--text-muted); font-size: 0.75rem; }
+    .panel-body::-webkit-scrollbar { width: 8px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: rgba(249, 168, 212, 0.4); border-radius: 4px; }
+    .page-single .panel { max-height: none; }
+    .page-single .panel-body { max-height: 480px; }
+    .main-footer {
+      margin-top: 40px; padding-top: 20px;
+      font-size: 0.75rem; color: var(--text-muted); opacity: 0.6;
+      text-align: center; border-top: 1px solid rgba(255,255,255,0.4);
+    }
+    .stat-card.loading .value { opacity: 0.5; }
+    .trend-section {
+      background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 20px; padding: 24px; margin-bottom: 24px;
+    }
+    .trend-section .section-title { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 20px; }
+    .trend-legend { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+    .trend-legend span { font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+    .trend-legend .dot { width: 10px; height: 10px; border-radius: 4px; }
+    .trend-legend .dot-reg { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+    .trend-legend .dot-2fa { background: #16a34a; }
+    .trend-legend .dot-ret { background: #db2777; }
+    .trend-bars { display: flex; align-items: flex-end; gap: 8px; height: 140px; padding: 0 4px; position: relative; }
+    .trend-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+    .trend-day-bars { display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 100px; width: 100%; }
+    .trend-day-bar {
+      flex: 1; min-width: 14px; max-width: 28px; min-height: 4px; border-radius: 6px 6px 0 0;
+      transition: height 0.4s ease; align-self: flex-end;
+    }
+    .trend-day-bar.reg { background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
+    .trend-day-bar.twofa { background: linear-gradient(180deg, #22c55e, #86efac); }
+    .trend-day-bar.ret { background: linear-gradient(180deg, #ec4899, #f9a8d4); }
+    .trend-day.today .trend-day-bar { box-shadow: 0 0 8px rgba(249,168,212,0.4); }
+    .trend-day .label { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
+    .trend-day .vals { font-size: 0.65rem; color: var(--text-muted); }
+    .small-list { font-size: 0.75rem; color: var(--text-muted); line-height: 1.6; }
+    .small-list .item-row { display:flex; justify-content:space-between; gap:8px; }
+    .small-list .item-row span:first-child { max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .small-list .item-row span:last-child { text-align:right; min-width:80px; }
+    .trend-tooltip {
+      position: absolute; z-index: 20; pointer-events: none;
+      background: rgba(255,255,255,0.9); border-radius: 10px;
+      padding: 8px 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      font-size: 0.7rem; color: var(--text);
+      transform: translate(-50%, -110%);
+      white-space: nowrap;
+    }
+    .vs-yesterday { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+    .vs-yesterday.up { color: #16a34a; }
+    .vs-yesterday.down { color: var(--error); }
+    .date-picker-wrap { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .date-picker-wrap label { font-size: 0.9rem; color: var(--text-muted); }
+    .date-picker-wrap .fp-input {
+      padding: 10px 16px; border-radius: 12px; border: 1px solid var(--glass-border);
+      background: var(--glass); color: var(--text); font-size: 0.9rem;
+      font-family: inherit; min-width: 140px; cursor: pointer;
+      backdrop-filter: blur(12px);
+    }
+    .date-picker-wrap .fp-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(249,168,212,0.2); }
+    .date-picker-wrap .fp-input::placeholder { color: var(--text-muted); }
+    .date-picker-wrap .btn-today { padding: 8px 16px; font-size: 0.8rem; border-radius: 10px;
+      border: 1px solid var(--glass-border); background: var(--glass); color: var(--text-muted);
+      cursor: pointer; transition: all 0.2s; }
+    .date-picker-wrap .btn-today:hover { background: rgba(249,168,212,0.2); color: var(--accent); }
+    /* 任务小窝：表单&按钮更精致 */
+    .task-form {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 14px 14px;
+      align-items: end;
+    }
+    .task-field { position: relative; }
+    .task-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      margin: 0 0 6px 2px;
+      user-select: none;
+    }
+    .task-input {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.75);
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: var(--text);
+      font-size: 0.86rem;
+      font-family: inherit;
+      box-shadow: 0 10px 24px rgba(249,168,212,0.08);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      outline: none;
+    }
+    .task-input:hover { background: rgba(255,255,255,0.65); }
+    .task-input:focus {
+      border-color: rgba(249,168,212,0.95);
+      box-shadow: 0 0 0 3px rgba(249,168,212,0.18), 0 16px 34px rgba(249,168,212,0.14);
+      transform: translateY(-1px);
+    }
+    .task-input[readonly] {
+      background: rgba(255,255,255,0.42);
+      color: rgba(107,76,90,0.75);
+    }
+    .task-input::placeholder { color: rgba(166,138,151,0.85); }
+    .task-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: flex-end;
+      grid-column: 5 / span 2;
+    }
+    .ui-btn {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.75);
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease, background 0.18s ease;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .ui-btn.primary {
+      background: linear-gradient(135deg, rgba(249,168,212,0.95), rgba(251,207,232,0.95));
+      color: #6b2747;
+      box-shadow: 0 18px 38px rgba(249,168,212,0.18);
+    }
+    .ui-btn.ghost {
+      background: rgba(255,255,255,0.55);
+      color: var(--text);
+      box-shadow: 0 14px 30px rgba(249,168,212,0.10);
+    }
+    .ui-btn:hover { transform: translateY(-1px); filter: brightness(1.03); }
+    .ui-btn:active { transform: translateY(0px) scale(0.99); }
+    .ui-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    @media (max-width: 1100px) {
+      .task-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .task-actions { grid-column: 1 / -1; justify-content: flex-start; }
+    }
+    @media (max-width: 760px) {
+      .task-form { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+    }
+    /* 今日心动：心跳 + 星星闪烁 */
+    .stat-card.heartbeat .value {
+      animation: heartbeat 1.4s ease-in-out infinite;
+      transform-origin: center;
+    }
+    @keyframes heartbeat {
+      0% { transform: scale(1); }
+      15% { transform: scale(1.06); }
+      30% { transform: scale(0.98); }
+      45% { transform: scale(1.03); }
+      60% { transform: scale(1); }
+      100% { transform: scale(1); }
+    }
+    .stat-card .label-emoji.star-twinkle {
+      position: relative;
+      display: inline-block;
+      animation: twinkle 1.8s ease-in-out infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { transform: translateY(0) scale(1); opacity: 0.8; }
+      40% { transform: translateY(-1px) scale(1.08); opacity: 1; }
+      70% { transform: translateY(0) scale(0.96); opacity: 0.7; }
+    }
+    /* 封号率高时轻微报警光圈 */
+    .stat-card.alert .value {
+      position: relative;
+      color: #b91c1c;
+      -webkit-text-fill-color: #b91c1c;
+    }
+    .stat-card.alert .value::after {
+      content: '';
+      position: absolute;
+      inset: -6px -10px;
+      border-radius: 999px;
+      border: 1px solid rgba(248,113,113,0.7);
+      box-shadow: 0 0 0 0 rgba(248,113,113,0.55);
+      animation: alertPulse 1.8s ease-out infinite;
+      pointer-events: none;
+    }
+    @keyframes alertPulse {
+      0%   { opacity: 0.9; transform: scale(1); box-shadow: 0 0 0 0 rgba(248,113,113,0.55); }
+      70%  { opacity: 0; transform: scale(1.10); box-shadow: 0 0 0 10px rgba(248,113,113,0); }
+      100% { opacity: 0; transform: scale(1.10); box-shadow: none; }
+    }
+    /* 任务列表：RUNNING 行高亮 + 状态点点跳动 */
+    tr.task-running td {
+      background: rgba(190,242,255,0.18);
+      box-shadow: inset 0 0 0 1px rgba(56,189,248,0.35);
+    }
+    .status.running::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      margin-right: 6px;
+      box-shadow: 0 0 0 0 rgba(34,197,94,0.8);
+      animation: statusPulse 1.6s ease-out infinite;
+    }
+    @keyframes statusPulse {
+      0%   { transform: scale(1);   box-shadow: 0 0 0 0 rgba(34,197,94,0.8); }
+      70%  { transform: scale(1.25);box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+      100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+    }
+    /* 留存日记顶上的小爱心 */
+    .retention-hearts {
+      position: relative;
+      height: 0;
+      pointer-events: none;
+    }
+    .retention-hearts span {
+      position: absolute;
+      font-size: 1rem;
+      color: #f9739b;
+      animation: heartFloat 2.6s ease-in-out forwards;
+      opacity: 0;
+    }
+    @keyframes heartFloat {
+      0%   { transform: translateY(8px) scale(0.8); opacity: 0; }
+      20%  { opacity: 1; }
+      70%  { transform: translateY(-18px) scale(1.1); opacity: 0.9; }
+      100% { transform: translateY(-26px) scale(0.9); opacity: 0; }
+    }
+    /* Flatpickr 少女系主题 */
+    .flatpickr-calendar { background: var(--glass) !important; backdrop-filter: blur(20px); border: 1px solid var(--glass-border) !important; border-radius: 16px !important; box-shadow: 0 16px 48px rgba(249,168,212,0.15) !important; }
+    .flatpickr-months { background: transparent !important; }
+    .flatpickr-month { background: linear-gradient(135deg, rgba(249,168,212,0.2), rgba(251,207,232,0.15)) !important; color: var(--text) !important; fill: var(--text) !important; height: 40px !important; border-radius: 16px 16px 0 0 !important; }
+    .flatpickr-current-month { color: var(--text) !important; font-weight: 600 !important; }
+    .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--text-muted) !important; }
+    .flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill: var(--accent) !important; }
+    .flatpickr-weekdays { background: transparent !important; }
+    span.flatpickr-weekday { color: var(--text-muted) !important; font-size: 0.75rem !important; }
+    .flatpickr-day { color: var(--text) !important; border-radius: 10px !important; }
+    .flatpickr-day:hover { background: rgba(249,168,212,0.25) !important; border-color: transparent !important; }
+    .flatpickr-day.selected { background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important; border-color: transparent !important; color: #fff !important; }
+    .flatpickr-day.today { border-color: var(--accent) !important; color: var(--accent) !important; font-weight: 600 !important; }
+    .flatpickr-day.today:hover { background: rgba(249,168,212,0.3) !important; }
+    .flatpickr-day.flatpickr-disabled { color: var(--text-muted) !important; opacity: 0.5 !important; }
+    .flatpickr-months .flatpickr-month { border-radius: 16px 16px 0 0 !important; }
+    .flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { padding: 8px !important; }
+  </style>
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">
+        <span class="logo-mark"></span>
+        <div class="brand-text">
+          <a class="brand-title" href="index.html">TT Farm Console</a>
+          <div class="brand-sub">批量养号控制台</div>
+        </div>
+      </div>
+      <a href="index.html" class="back-home">返回首页</a>
+      <nav class="nav-item active" data-page="overview"><span class="icon"></span><span class="nav-emoji">🌸</span> 今日心动 ✨</nav>
+      <nav class="nav-item" data-page="block-rate"><span class="icon"></span><span class="nav-emoji">📊</span> 谁被封了 ♡</nav>
+      <nav class="nav-item" data-page="accounts"><span class="icon"></span><span class="nav-emoji">🪄</span> 任务小窝</nav>
+      <nav class="nav-item" data-page="retention"><span class="icon"></span><span class="nav-emoji">📖</span> 留存日记</nav>
+    </aside>
+    <main class="main">
+      <!-- 总览 页面 -->
+      <div class="page-view active" id="page-overview">
+        <header class="header">
+          <h1>今日心动 ✨</h1>
+          <p class="sub">每日注册 · 一眼看穿所有小心思</p>
+          <p class="sub-emoji">今天也要加油呀～</p>
+        </header>
+        <div class="date-picker-wrap">
+          <label for="overview-date">查询日期：</label>
+          <input type="text" class="fp-input" id="overview-date" placeholder="选择日期" readonly />
+          <button type="button" class="btn-today" id="overview-btn-today">今天</button>
+          <span style="font-size:0.75rem;color:var(--text-muted);">选哪天就看那天的数据 + 前6天趋势～</span>
+        </div>
+        <div class="stats-row" id="overview-stats">
+          <div class="stat-card"><div class="label">今天牵手成功 <span class="label-emoji star-twinkle">✨</span></div><div class="value" id="stat-today-register">-</div><div class="vs-yesterday">username 不为空</div></div>
+          <div class="stat-card green heartbeat"><div class="label">2FA 搞定啦 <span class="label-emoji star-twinkle">🔐</span></div><div class="value" id="stat-today-2fa">-</div><div class="vs-yesterday">is_2fa_setup_success=1</div></div>
+          <div class="stat-card purple"><div class="label">待留存做2FA <span class="label-emoji">💕</span></div><div class="value" id="stat-today-retention">-</div><div class="vs-yesterday">need_retention=1</div></div>
+          <div class="stat-card orange"><div class="label">今日成功率 <span class="label-emoji">📈</span></div><div class="value" id="stat-today-rate">-</div><div class="vs-yesterday">2FA成功/注册数</div></div>
+        </div>
+        <div class="trend-section">
+          <div class="section-title">七日心动曲线 · 牵手 / 2FA / 留存 ♡</div>
+          <div class="trend-legend">
+            <span><i class="dot dot-reg"></i>牵手</span>
+            <span><i class="dot dot-2fa"></i>2FA</span>
+            <span><i class="dot dot-ret"></i>留存</span>
+          </div>
+          <div class="trend-bars" id="trend-bars"></div>
+        </div>
+
+        <div class="panel panel-full" id="twofa-detail-panel" style="margin-top:20px;">
+          <div class="panel-header"><span class="panel-title">今天 2FA 成功 · 详情 ♡</span></div>
+          <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:16px;">
+            <div class="panel" style="flex:1;min-width:220px;">
+              <div class="panel-header"><span class="panel-title">安卓版本分布</span></div>
+              <div class="panel-body small-list" id="twofa-android-list"></div>
+            </div>
+            <div class="panel" style="flex:1;min-width:220px;">
+              <div class="panel-header"><span class="panel-title">行为 (nickname_behavior)</span></div>
+              <div class="panel-body small-list" id="twofa-behavior-list"></div>
+            </div>
+            <div class="panel" style="flex:1;min-width:220px;">
+              <div class="panel-header"><span class="panel-title">TikTok 版本分布</span></div>
+              <div class="panel-body small-list" id="twofa-tiktok-list"></div>
+            </div>
+            <div class="panel" style="flex:1;min-width:220px;">
+              <div class="panel-header"><span class="panel-title">国家分布</span></div>
+              <div class="panel-body small-list" id="twofa-country-list"></div>
+            </div>
+          </div>
+          <div class="panel-body" style="border-top:1px dashed rgba(255,255,255,0.6);margin-top:12px;padding-top:12px;display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;color:var(--text-muted);">
+            <span id="twofa-traffic-total">今日流量消耗总量：-</span>
+            <span id="twofa-traffic-avg">单个成功账号平均消耗：-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 封号率统计 页面 -->
+      <div class="page-view" id="page-block-rate">
+        <header class="header">
+          <h1>谁被封了 ♡</h1>
+          <p class="sub">2FA 设置成功当天为基准日，block_time 不为空 = 被封</p>
+          <p class="sub-emoji">看看哪些小可爱被风控了～</p>
+        </header>
+        <div class="date-picker-wrap">
+          <label for="block-rate-date">查询日期：</label>
+          <input type="text" class="fp-input" id="block-rate-date" placeholder="选择日期" readonly />
+          <button type="button" class="btn-today" id="block-rate-btn-today">今天</button>
+          <span style="font-size:0.75rem;color:var(--text-muted);">选哪天就看那天的次日/3天/7天封号率～</span>
+        </div>
+        <div class="stats-row" id="block-rate-stats">
+          <div class="stat-card green"><div class="label">次日封号率 <span class="label-emoji">📅</span></div><div class="value" id="block-next-day-rate">-</div><div class="vs-yesterday" id="block-next-day-detail">昨日2FA成功</div></div>
+          <div class="stat-card orange"><div class="label">3天封号率 <span class="label-emoji">📆</span></div><div class="value" id="block-three-day-rate">-</div><div class="vs-yesterday" id="block-three-day-detail">3天前2FA成功</div></div>
+          <div class="stat-card purple"><div class="label">7天封号率 <span class="label-emoji">📊</span></div><div class="value" id="block-seven-day-rate">-</div><div class="vs-yesterday" id="block-seven-day-detail">7天前2FA成功</div></div>
+        </div>
+        <div class="trend-section" style="margin-top: 20px;">
+          <div class="section-title">最近7天封号率 · 只看每天那批2FA账号当前被封比例</div>
+          <div class="trend-legend">
+            <span><i class="dot dot-2fa"></i>封号率（%）</span>
+          </div>
+          <div class="trend-bars" id="block-rate-trend-bars"></div>
+        </div>
+        <div class="panel" style="margin-top:24px;">
+          <div class="panel-header"><span class="panel-title">说明 ♡</span></div>
+          <div class="panel-body" style="padding:20px;max-height:none;">
+            <p id="block-rate-desc" style="font-size:0.85rem;color:var(--text-muted);line-height:1.7;">
+              • <strong>次日封号率</strong>：昨日（<span id="desc-date-1"></span>）2FA 设置成功的账号，至今 block_time 不为空的比例<br>
+              • <strong>3天封号率</strong>：3天前（<span id="desc-date-3"></span>）2FA 设置成功的账号，至今 block_time 不为空的比例<br>
+              • <strong>7天封号率</strong>：7天前（<span id="desc-date-7"></span>）2FA 设置成功的账号，至今 block_time 不为空的比例
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 任务小窝 页面 -->
+      <div class="page-view" id="page-accounts">
+        <header class="header">
+          <h1>任务小窝 ♡</h1>
+          <p class="sub">所有小任务的休息与复活基地</p>
+          <p class="sub-emoji">想停就停，想改就改，再次出发～</p>
+        </header>
+        <div class="content-grid page-single">
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header"><span class="panel-title">当前任务列表 ♡</span></div>
+            <div class="panel-body">
+              <table class="data-table" id="task-table">
+                <thead>
+                  <tr>
+                    <th>任务ID</th>
+                    <th>状态</th>
+                    <th>Server IP</th>
+                    <th>设备ID</th>
+                    <th>成功/失败</th>
+                    <th>开始时间</th>
+                    <th>结束时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="task-table-body">
+                  <tr><td colspan="8" style="text-align:center;color:var(--text-muted);">正在加载任务列表…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel" style="grid-column:1 / span 2;">
+            <div class="panel-header"><span class="panel-title">任务配置编辑 · 停一下，改一改再继续 ♡</span></div>
+            <div class="panel-body" style="padding:16px 20px;max-height:none;">
+              <form id="task-edit-form" class="task-form">
+                <div class="task-field" style="grid-column: span 2;">
+                  <label class="task-label">任务ID</label>
+                  <input type="text" id="edit-task-id" class="task-input" readonly placeholder="点击上面的任务自动带入" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">国家 (country)</label>
+                  <input type="text" id="edit-country" class="task-input" placeholder="如 US / BR" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">SDK 版本 (sdk)</label>
+                  <input type="text" id="edit-sdk" class="task-input" placeholder="如 33" />
+                </div>
+                <div class="task-field" style="grid-column: span 2;">
+                  <label class="task-label">镜像路径 (imagePath)</label>
+                  <input type="text" id="edit-image-path" class="task-input" placeholder="uhub...android13_xxx" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">GAID 标签 (gaidTag)</label>
+                  <input type="text" id="edit-gaid-tag" class="task-input" placeholder="如 20250410" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">动态IP渠道 (dynamicIpChannel)</label>
+                  <input type="text" id="edit-dynamic-ip" class="task-input" placeholder="如 closeli" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">静态IP渠道 (staticIpChannel)</label>
+                  <input type="text" id="edit-static-ip" class="task-input" placeholder="可选" />
+                </div>
+                <div class="task-field">
+                  <label class="task-label">目标数量 (targetCount)</label>
+                  <input type="number" id="edit-target-count" class="task-input" placeholder="0=无限" />
+                </div>
+                <div class="task-field" style="grid-column: span 2;">
+                  <label class="task-label">业务标识 (biz)</label>
+                  <input type="text" id="edit-biz" class="task-input" placeholder="可选备注" />
+                </div>
+                <div class="task-actions">
+                  <button type="button" id="btn-task-save" class="ui-btn primary">保存修改</button>
+                  <button type="button" id="btn-task-resume" class="ui-btn ghost">恢复执行</button>
+                </div>
+                <div id="task-edit-tip" style="grid-column:1 / -1;font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                  小提示：先在上面点「停止」，再改配置，最后点「恢复执行」，任务会以新配置重新排队。
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 留存记录 页面 -->
+      <div class="page-view" id="page-retention">
+        <header class="header">
+          <h1>留存日记 ♡</h1>
+          <p class="sub">记录每一次“别走呀”的小心动</p>
+          <p class="sub-emoji">今天哪些小可爱被留住了，哪些溜走了～</p>
+        </header>
+        <div class="date-picker-wrap">
+          <label for="retention-date">查询日期：</label>
+          <input type="text" class="fp-input" id="retention-date" placeholder="选择日期" readonly />
+          <button type="button" class="btn-today" id="retention-btn-today">今天</button>
+          <span style="font-size:0.75rem;color:var(--text-muted);">看某一天的留存执行情况～</span>
+        </div>
+        <div class="content-grid page-single">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">今日留存小结 ♡</span></div>
+            <div class="panel-body" style="padding:18px 22px;max-height:none;">
+              <div class="retention-hearts" id="ret-hearts"></div>
+              <div style="display:flex;flex-wrap:wrap;gap:18px;font-size:0.85rem;color:var(--text-muted);">
+                <div>总执行：<span id="ret-total">-</span></div>
+                <div>脚本成功：<span id="ret-script-ok">-</span></div>
+                <div>脚本成功率：<span id="ret-success-rate">-</span></div>
+                <div>备份成功：<span id="ret-backup-ok">-</span></div>
+                <div>备份成功率：<span id="ret-backup-rate">-</span></div>
+                <div>留存完成并2FA成功：<span id="ret-2fa-success">-</span></div>
+                <div>留存账号登出：<span id="ret-logout">-</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel panel-full">
+            <div class="panel-header"><span class="panel-title">tt_retention_record · 留存执行记录 ♡</span></div>
+            <div class="panel-body">
+              <table class="data-table" id="ret-table">
+                <thead><tr><th>任务ID</th><th>设备</th><th>账号ID</th><th>GAID</th><th>脚本执行</th><th>备份</th><th>执行时间</th></tr></thead>
+                <tbody id="ret-tbody">
+                  <tr><td colspan="7" style="text-align:center;color:var(--text-muted);">请选择日期查询留存记录～</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="main-footer">Made with ♡ · 今天也要加油呀</p>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/zh.js"></script>
+  <script>
+    (function() {
+      var navItems = document.querySelectorAll('.nav-item[data-page]');
+      var pages = document.querySelectorAll('.page-view');
+      var currentPage = 'overview';
+
+      function switchPage(pageId) {
+        if (pageId === currentPage) return;
+        var targetPage = document.getElementById('page-' + pageId);
+        var currentPageEl = document.getElementById('page-' + currentPage);
+        if (!targetPage || !currentPageEl) return;
+
+        currentPageEl.classList.add('leaving');
+        setTimeout(function() {
+          currentPageEl.classList.remove('active', 'leaving');
+          targetPage.classList.add('active');
+          currentPage = pageId;
+
+          navItems.forEach(function(nav) {
+            nav.classList.toggle('active', nav.getAttribute('data-page') === pageId);
+          });
+        }, 350);
+      }
+
+      navItems.forEach(function(nav) {
+        nav.addEventListener('click', function() {
+          var page = this.getAttribute('data-page');
+          if (page) switchPage(page);
+        });
+      });
+    })();
+
+    // 加载每日注册统计
+    (function() {
+      var trendBars = document.getElementById('trend-bars');
+      var dateInput = document.getElementById('overview-date');
+      if (!trendBars) return;
+
+      function toYmd(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function fmtNum(n) { return String(n == null ? 0 : n); }
+      function renderDist(list, elId) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        list = list || [];
+        if (!list.length) {
+          el.innerHTML = '<div style="color:var(--text-muted);">暂无数据</div>';
+          return;
+        }
+        el.innerHTML = list.map(function(item) {
+          var name = item.value || '未知';
+          var count = item.count || 0;
+          var pct = item.percent != null ? item.percent : 0;
+          return '<div class="item-row"><span>' + name + '</span><span>' + count + ' · ' + pct + '%</span></div>';
+        }).join('');
+      }
+      function render(data) {
+        document.getElementById('stat-today-register').textContent = fmtNum(data.todayRegister);
+        document.getElementById('stat-today-2fa').textContent = fmtNum(data.today2faSuccess);
+        document.getElementById('stat-today-retention').textContent = fmtNum(data.todayNeedRetention);
+        document.getElementById('stat-today-rate').textContent = (data.today2faRate != null ? data.today2faRate : 0) + '%';
+
+        // 当 2FA 成功数为 0 时，取消心跳效果，避免无意义动效
+        var twofaCard = document.querySelector('#overview-stats .stat-card.green');
+        if (twofaCard) {
+          if ((data.today2faSuccess || 0) > 0) {
+            twofaCard.classList.add('heartbeat');
+          } else {
+            twofaCard.classList.remove('heartbeat');
+          }
+        }
+
+        if (data.twofaDetail) {
+          var detail = data.twofaDetail;
+          renderDist(detail.androidVersionDist || [], 'twofa-android-list');
+          renderDist(detail.behaviorDist || [], 'twofa-behavior-list');
+          renderDist(detail.tiktokVersionDist || [], 'twofa-tiktok-list');
+          renderDist(detail.countryDist || [], 'twofa-country-list');
+          var totalText = detail.trafficTotal != null ? detail.trafficTotal : '-';
+          var avgText = detail.trafficAvgPerSuccess != null ? detail.trafficAvgPerSuccess : '-';
+          document.getElementById('twofa-traffic-total').textContent = '今日流量消耗总量：' + totalText;
+          document.getElementById('twofa-traffic-avg').textContent = '单个成功账号平均消耗：' + avgText;
+        }
+
+        var trend = data.dailyTrend || [];
+        var maxVal = Math.max(1, Math.max.apply(null, trend.map(function(d) {
+          return Math.max(d.register || 0, d.twofa || 0, d.retention || 0);
+        })));
+        var html = trend.map(function(d, i) {
+          var pctReg = maxVal > 0 ? ((d.register || 0) / maxVal * 100) : 0;
+          var pct2fa = maxVal > 0 ? ((d.twofa || 0) / maxVal * 100) : 0;
+          var pctRet = maxVal > 0 ? ((d.retention || 0) / maxVal * 100) : 0;
+          var label = d.label || d.date;
+          var title = label ? label.replace(/"/g, '&quot;') : '';
+          return '<div class="trend-day' + (i === 6 ? ' today' : '') + '" data-register="' + (d.register || 0) +
+            '" data-twofa="' + (d.twofa || 0) + '" data-retention="' + (d.retention || 0) +
+            '" data-label="' + title + '">' +
+            '<div class="trend-day-bars">' +
+            '<div class="trend-day-bar reg" style="height:' + pctReg + '%"></div>' +
+            '<div class="trend-day-bar twofa" style="height:' + pct2fa + '%"></div>' +
+            '<div class="trend-day-bar ret" style="height:' + pctRet + '%"></div>' +
+            '</div>' +
+            '<div class="vals">' + (d.register || 0) + ' / ' + (d.twofa || 0) + ' / ' + (d.retention || 0) + '</div>' +
+            '<span class="label">' + (label || '') + '</span></div>';
+        }).join('');
+        trendBars.innerHTML = html;
+
+        var tooltip = document.createElement('div');
+        tooltip.className = 'trend-tooltip';
+        tooltip.style.display = 'none';
+        trendBars.appendChild(tooltip);
+
+        trendBars.querySelectorAll('.trend-day').forEach(function(dayEl) {
+          dayEl.addEventListener('mouseenter', function(e) {
+            var reg = this.getAttribute('data-register') || '0';
+            var twofa = this.getAttribute('data-twofa') || '0';
+            var ret = this.getAttribute('data-retention') || '0';
+            var label = this.getAttribute('data-label') || '';
+            tooltip.innerHTML = (label ? label + '<br>' : '') +
+              '注册: ' + reg + ' · 2FA: ' + twofa + ' · 留存: ' + ret;
+            tooltip.style.display = 'block';
+            var rect = trendBars.getBoundingClientRect();
+            var x = (e.clientX - rect.left);
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = '0px';
+          });
+          dayEl.addEventListener('mousemove', function(e) {
+            if (tooltip.style.display === 'none') return;
+            var rect = trendBars.getBoundingClientRect();
+            var x = (e.clientX - rect.left);
+            tooltip.style.left = x + 'px';
+          });
+          dayEl.addEventListener('mouseleave', function() {
+            tooltip.style.display = 'none';
+          });
+        });
+      }
+      function loadDailyRegister(dateStr) {
+        var url = '/api/statistics/daily-register';
+        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (res.success && res.data) {
+              var d = res.data;
+              render({
+                todayRegister: d.todayRegister || 0,
+                today2faSuccess: d.today2faSuccess || 0,
+                todayNeedRetention: d.todayNeedRetention || 0,
+                today2faRate: d.today2faRate != null ? d.today2faRate : 0,
+                dailyTrend: d.dailyTrend || []
+              });
+            } else {
+              document.getElementById('stat-today-register').textContent = '-';
+              document.getElementById('stat-today-2fa').textContent = '-';
+              document.getElementById('stat-today-retention').textContent = '-';
+              document.getElementById('stat-today-rate').textContent = '-';
+              trendBars.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">暂无数据 ♡</div>';
+            }
+          })
+          .catch(function() {
+            document.getElementById('stat-today-register').textContent = '—';
+            document.getElementById('stat-today-2fa').textContent = '—';
+            document.getElementById('stat-today-retention').textContent = '—';
+            document.getElementById('stat-today-rate').textContent = '—';
+            trendBars.innerHTML = '<div style="color:var(--error);padding:20px;text-align:center;">加载失败，请检查接口</div>';
+          });
+      }
+      if (dateInput) {
+        var todayStr = toYmd(new Date());
+        var fpOverview = flatpickr(dateInput, {
+          locale: 'zh',
+          dateFormat: 'Y-m-d',
+          defaultDate: todayStr,
+          maxDate: todayStr,
+          allowInput: false,
+          onChange: function(sel, dateStr) { if (dateStr) loadDailyRegister(dateStr); }
+        });
+        var btnToday = document.getElementById('overview-btn-today');
+        if (btnToday) btnToday.addEventListener('click', function() {
+          var t = toYmd(new Date());
+          fpOverview.setDate(t, true);
+          loadDailyRegister(t);
+        });
+      }
+      loadDailyRegister(toYmd(new Date()));
+    })();
+
+    // 加载封号率统计 + 最近7天趋势
+    (function() {
+      var dateInput = document.getElementById('block-rate-date');
+      var trendBars = document.getElementById('block-rate-trend-bars');
+      function toYmd(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function fillDescDatesFromDate(ymd) {
+        var p = (ymd || toYmd(new Date())).split('-');
+        if (p.length < 3) return;
+        var base = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10));
+        function addDays(n) {
+          var x = new Date(base);
+          x.setDate(x.getDate() - n);
+          return x.getMonth() + 1 + '月' + x.getDate() + '日';
+        }
+        var el1 = document.getElementById('desc-date-1');
+        var el3 = document.getElementById('desc-date-3');
+        var el7 = document.getElementById('desc-date-7');
+        if (el1) el1.textContent = addDays(1);
+        if (el3) el3.textContent = addDays(3);
+        if (el7) el7.textContent = addDays(7);
+      }
+      function fmtDateStr(ymd) {
+        if (!ymd) return '';
+        var p = String(ymd).split('-');
+        if (p.length >= 3) return p[1] + '月' + parseInt(p[2], 10) + '日';
+        return ymd;
+      }
+      function renderBlockRate(data) {
+        var items = [
+          { key: 'nextDay', rateId: 'block-next-day-rate', detailId: 'block-next-day-detail', descId: 'desc-date-1' },
+          { key: 'threeDay', rateId: 'block-three-day-rate', detailId: 'block-three-day-detail', descId: 'desc-date-3' },
+          { key: 'sevenDay', rateId: 'block-seven-day-rate', detailId: 'block-seven-day-detail', descId: 'desc-date-7' }
+        ];
+        items.forEach(function(it) {
+          var d = data[it.key];
+          if (!d) return;
+          document.getElementById(it.rateId).textContent = (d.blockRate != null ? d.blockRate : 0) + '%';
+          document.getElementById(it.detailId).textContent = d.baseDate + ' 共' + d.total + ' 封' + d.blocked;
+          var descEl = document.getElementById(it.descId);
+          if (descEl) descEl.textContent = fmtDateStr(d.baseDate);
+        });
+
+        // 根据封号率给卡片加/去掉 alert 效果
+        ['block-next-day-rate','block-three-day-rate','block-seven-day-rate'].forEach(function(id){
+          var el = document.getElementById(id);
+          if (!el) return;
+          var card = el.closest('.stat-card');
+          if (!card) return;
+          var val = parseFloat((el.textContent || '').replace('%','')) || 0;
+          if (val >= 30) card.classList.add('alert');
+          else card.classList.remove('alert');
+        });
+      }
+      function renderBlockTrend(data) {
+        if (!trendBars) return;
+        var list = (data && data.trend) || [];
+        if (!list.length) {
+          trendBars.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">暂无趋势数据 ♡</div>';
+          return;
+        }
+        var maxRate = Math.max(1, Math.max.apply(null, list.map(function(it) {
+          return (it.blockRate != null ? it.blockRate : 0);
+        })));
+        var html = list.map(function(it, idx) {
+          var rate = it.blockRate != null ? it.blockRate : 0;
+          var pct = maxRate > 0 ? (rate / maxRate * 100) : 0;
+          var label = it.label || it.date;
+          return '<div class="trend-day' + (idx === list.length - 1 ? ' today' : '') + '">' +
+            '<div class="trend-day-bars">' +
+            '<div class="trend-day-bar twofa" style="height:' + pct + '%"></div>' +
+            '</div>' +
+            '<div class="vals">' + rate + '%</div>' +
+            '<span class="label">' + (label || '') + '</span></div>';
+        }).join('');
+        trendBars.innerHTML = html;
+      }
+      function loadBlockRate(dateStr) {
+        var url = '/api/statistics/block-rate';
+        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (res.success && res.data) renderBlockRate(res.data);
+            else {
+              document.getElementById('block-next-day-rate').textContent = '-';
+              document.getElementById('block-three-day-rate').textContent = '-';
+              document.getElementById('block-seven-day-rate').textContent = '-';
+              fillDescDatesFromDate(dateStr);
+            }
+          })
+          .catch(function() {
+            document.getElementById('block-next-day-rate').textContent = '—';
+            document.getElementById('block-three-day-rate').textContent = '—';
+            document.getElementById('block-seven-day-rate').textContent = '—';
+            fillDescDatesFromDate(dateStr);
+          });
+        // 同时刷新最近7天封号率趋势（与卡片无强关联）
+        var trendUrl = '/api/statistics/block-rate-trend';
+        if (dateStr) trendUrl += '?date=' + encodeURIComponent(dateStr);
+        if (trendBars) {
+          fetch(trendUrl)
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              if (res.success && res.data) renderBlockTrend(res.data);
+              else renderBlockTrend(null);
+            })
+            .catch(function() {
+              renderBlockTrend(null);
+            });
+        }
+      }
+      if (dateInput) {
+        var todayStr = toYmd(new Date());
+        var fpBlock = flatpickr(dateInput, {
+          locale: 'zh',
+          dateFormat: 'Y-m-d',
+          defaultDate: todayStr,
+          maxDate: todayStr,
+          allowInput: false,
+          onChange: function(sel, dateStr) { if (dateStr) loadBlockRate(dateStr); }
+        });
+        var brBtnToday = document.getElementById('block-rate-btn-today');
+        if (brBtnToday) brBtnToday.addEventListener('click', function() {
+          var t = toYmd(new Date());
+          fpBlock.setDate(t, true);
+          loadBlockRate(t);
+        });
+      }
+      loadBlockRate(toYmd(new Date()));
+    })();
+
+    // 任务小窝：任务列表 + 编辑/恢复
+    (function() {
+      var tbody = document.getElementById('task-table-body');
+      var editTaskId = document.getElementById('edit-task-id');
+      if (!tbody || !editTaskId) return;
+
+      function statusBadge(status) {
+        var cls = 'status ';
+        switch (status) {
+          case 'RUNNING': cls += 'running'; break;
+          case 'COMPLETED': cls += 'completed'; break;
+          case 'PENDING': cls += 'pending'; break;
+          case 'FAILED': cls += 'failed'; break;
+          case 'STOPPED': cls += 'stopped'; break;
+          default: cls += 'pending';
+        }
+        return '<span class="' + cls + '">' + (status || '-') + '</span>';
+      }
+
+      function fmtTime(t) {
+        if (!t) return '-';
+        return t.replace('T', ' ').substring(0, 19);
+      }
+
+      function loadTasks() {
+        fetch('/api/tt-register/tasks')
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success) {
+              tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--error);">加载失败：' + (res.message || '未知错误') + '</td></tr>';
+              return;
+            }
+            var list = res.data || [];
+            if (!list.length) {
+              tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">当前没有运行中的任务～</td></tr>';
+              return;
+            }
+            tbody.innerHTML = list.map(function(t) {
+              var rowCls = (t.status === 'RUNNING' ? ' class="task-running"' : '');
+              var phones = (t.phoneIds && t.phoneIds.length) ? t.phoneIds.join(',') : '-';
+              return '<tr' + rowCls + ' data-task-id="' + t.taskId + '" data-server-ip="' + (t.serverIp || '') + '">' +
+                '<td>' + t.taskId + '</td>' +
+                '<td>' + statusBadge(t.status) + '</td>' +
+                '<td>' + (t.serverIp || '-') + '</td>' +
+                '<td>' + phones + '</td>' +
+                '<td>' + (t.successCount || 0) + ' / ' + (t.failCount || 0) + '</td>' +
+                '<td>' + fmtTime(t.startTime) + '</td>' +
+                '<td>' + fmtTime(t.endTime) + '</td>' +
+                '<td><button type="button" class="ui-btn ghost btn-stop-task" data-id="' + t.taskId + '">停止</button></td>' +
+              '</tr>';
+            }).join('');
+
+            tbody.querySelectorAll('tr').forEach(function(tr) {
+              tr.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('btn-stop-task')) return;
+                var tid = this.getAttribute('data-task-id');
+                if (!tid) return;
+                editTaskId.value = tid;
+              });
+            });
+
+            tbody.querySelectorAll('.btn-stop-task').forEach(function(btn) {
+              btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var tid = this.getAttribute('data-id');
+                if (!tid) return;
+                fetch('/api/tt-register/stop/' + encodeURIComponent(tid), { method: 'POST' })
+                  .then(function(r) { return r.json(); })
+                  .then(function(res2) {
+                    alert(res2.message || (res2.success ? '任务已停止' : '停止失败'));
+                    loadTasks();
+                  })
+                  .catch(function() {
+                    alert('停止任务失败，请稍后重试');
+                  });
+              });
+            });
+          })
+          .catch(function() {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--error);">加载任务列表失败</td></tr>';
+          });
+      }
+
+      function collectEditForm() {
+        var data = { taskId: editTaskId.value.trim() };
+        var v;
+        v = document.getElementById('edit-country').value.trim(); if (v) data.country = v;
+        v = document.getElementById('edit-sdk').value.trim(); if (v) data.sdk = v;
+        v = document.getElementById('edit-image-path').value.trim(); if (v) data.imagePath = v;
+        v = document.getElementById('edit-gaid-tag').value.trim(); if (v) data.gaidTag = v;
+        v = document.getElementById('edit-dynamic-ip').value.trim(); if (v) data.dynamicIpChannel = v;
+        v = document.getElementById('edit-static-ip').value.trim(); if (v) data.staticIpChannel = v;
+        v = document.getElementById('edit-biz').value.trim(); if (v) data.biz = v;
+        v = document.getElementById('edit-target-count').value.trim(); if (v) data.targetCount = v;
+        return data;
+      }
+
+      var btnSave = document.getElementById('btn-task-save');
+      var btnResume = document.getElementById('btn-task-resume');
+
+      if (btnSave) {
+        btnSave.addEventListener('click', function() {
+          if (!editTaskId.value.trim()) {
+            alert('请先在上面的列表中点击一个任务～');
+            return;
+          }
+          var payload = collectEditForm();
+          fetch('/api/tt-register/task/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              alert(res.message || (res.success ? '保存成功' : '保存失败'));
+            })
+            .catch(function() { alert('保存失败，请稍后重试'); });
+        });
+      }
+
+      if (btnResume) {
+        btnResume.addEventListener('click', function() {
+          var tid = editTaskId.value.trim();
+          if (!tid) {
+            alert('请先在上面的列表中点击一个任务～');
+            return;
+          }
+          fetch('/api/tt-register/task/resume/' + encodeURIComponent(tid), { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+              alert(res.message || (res.success ? '任务已恢复' : '恢复失败'));
+              loadTasks();
+            })
+            .catch(function() { alert('恢复失败，请稍后重试'); });
+        });
+      }
+
+      loadTasks();
+    })();
+
+    // 留存日记：按日期加载留存记录
+    (function() {
+      var dateInput = document.getElementById('retention-date');
+      var tbody = document.getElementById('ret-tbody');
+      function toYmd(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function loadRetention(dateStr) {
+        if (!tbody) return;
+        var url = '/api/statistics/retention-records';
+        if (dateStr) url += '?date=' + encodeURIComponent(dateStr);
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">加载中…</td></tr>';
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            if (!res.success || !res.data) {
+              tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--error);">加载失败～</td></tr>';
+              return;
+            }
+            var d = res.data;
+            document.getElementById('ret-total').textContent = d.total || 0;
+            document.getElementById('ret-script-ok').textContent = d.scriptSuccessCount || 0;
+            document.getElementById('ret-success-rate').textContent = (d.successRate != null ? d.successRate : 0) + '%';
+            document.getElementById('ret-backup-ok').textContent = d.backupSuccessCount || 0;
+            document.getElementById('ret-backup-rate').textContent = (d.backupRate != null ? d.backupRate : 0) + '%';
+            document.getElementById('ret-2fa-success').textContent = d.retention2faSuccess != null ? d.retention2faSuccess : 0;
+            document.getElementById('ret-logout').textContent = d.retentionLogout != null ? d.retentionLogout : 0;
+            var heartsWrap = document.getElementById('ret-hearts');
+            if (heartsWrap) {
+              heartsWrap.innerHTML = '';
+              if ((d.successRate || 0) >= 60) {
+                var count = d.successRate >= 90 ? 3 : (d.successRate >= 75 ? 2 : 1);
+                for (var i = 0; i < count; i++) {
+                  var span = document.createElement('span');
+                  span.textContent = '♡';
+                  span.style.left = (20 + i * 16) + '%';
+                  span.style.animationDelay = (i * 0.25) + 's';
+                  heartsWrap.appendChild(span);
+                }
+              }
+            }
+            var list = d.records || [];
+            if (!list.length) {
+              tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">这一天还没有留存记录～</td></tr>';
+              return;
+            }
+            tbody.innerHTML = list.map(function(row) {
+              var scriptOk = row.scriptSuccess === true || row.scriptSuccess === 1;
+              var backupOk = row.backupSuccess === true || row.backupSuccess === 1;
+              return '<tr>' +
+                '<td>' + (row.taskId || '-') + '</td>' +
+                '<td>' + (row.phoneServerIp || '-') + ' / ' + (row.phoneId || '-') + '</td>' +
+                '<td>' + (row.accountRegisterId != null ? row.accountRegisterId : '-') + '</td>' +
+                '<td>' + (row.gaid || '-') + '</td>' +
+                '<td><span class="status ' + (scriptOk ? 'success' : 'failed') + '">' + (scriptOk ? '成功' : '失败') + '</span></td>' +
+                '<td><span class="status ' + (backupOk ? 'success' : 'failed') + '">' + (backupOk ? '成功' : '失败') + '</span></td>' +
+                '<td class="time">' + (row.createdAt || '-') + '</td>' +
+              '</tr>';
+            }).join('');
+          })
+          .catch(function() {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--error);">加载失败，请稍后重试</td></tr>';
+          });
+      }
+      if (dateInput) {
+        var todayStr = toYmd(new Date());
+        var fpRet = flatpickr(dateInput, {
+          locale: 'zh',
+          dateFormat: 'Y-m-d',
+          defaultDate: todayStr,
+          maxDate: todayStr,
+          allowInput: false,
+          onChange: function(sel, dateStr) { if (dateStr) loadRetention(dateStr); }
+        });
+        var btnToday = document.getElementById('retention-btn-today');
+        if (btnToday) btnToday.addEventListener('click', function() {
+          var t = toYmd(new Date());
+          fpRet.setDate(t, true);
+          loadRetention(t);
+        });
+        // 初次进入默认查今天
+        loadRetention(todayStr);
+      }
+    })();
+  </script>
+</body>
+</html>

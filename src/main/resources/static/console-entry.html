@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Console Entry</title>
+</head>
+<body>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search || '');
+      var ui = params.get('ui');
+      if (ui === 'v1' || ui === 'v2') {
+        localStorage.setItem('console_ui_version', ui);
+      } else {
+        ui = localStorage.getItem('console_ui_version') || 'v2';
+      }
+      var target = ui === 'v2' ? '/console-vue/' : '/console.html';
+      location.replace(target);
+    })();
+  </script>
+</body>
+</html>

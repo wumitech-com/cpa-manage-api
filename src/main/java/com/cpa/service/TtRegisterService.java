@@ -2,9 +2,11 @@ package com.cpa.service;
 
 import com.cpa.config.SshProperties;
 import com.cpa.entity.TtAccountRegister;
+import com.cpa.entity.TtFollowDetailsNew;
 import com.cpa.entity.TtRegisterTask;
 import com.cpa.entity.TtRetentionRecord;
 import com.cpa.repository.TtAccountRegisterRepository;
+import com.cpa.repository.TtFollowDetailsNewRepository;
 import com.cpa.repository.TtRegisterTaskRepository;
 import com.cpa.repository.TtRetentionRecordRepository;
 import com.cpa.util.SshUtil;
@@ -22,7 +24,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.PostConstruct;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
@@ -30,6 +36,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 /**
  * TT账号批量注册服务
@@ -42,8 +49,10 @@ public class TtRegisterService {
     private final SshProperties sshProperties;
     private final ApiService apiService;
     private final TtAccountRegisterRepository ttAccountRegisterRepository;
+    private final TtFollowDetailsNewRepository ttFollowDetailsNewRepository;
     private final TtRegisterTaskRepository ttRegisterTaskRepository;
     private final TtRetentionRecordRepository ttRetentionRecordRepository;
+    private final TaskSchedulerService taskSchedulerService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     @Value("${tt-register.default-image:}")
@@ -72,7 +81,7 @@ public class TtRegisterService {
     // 多线程池配置：分离不同类型的任务
     // 1. 并行注册线程池（用于多设备并行注册）
     private static final AtomicInteger threadCounter = new AtomicInteger(0);
-    private final ExecutorService parallelRegisterExecutor = Executors.newFixedThreadPool(200, 
+    private final ExecutorService parallelRegisterExecutor = Executors.newFixedThreadPool(1000, 
         r -> {
             Thread t = new Thread(r, "parallel-register-" + threadCounter.incrementAndGet());
             t.setDaemon(false);
@@ -95,9 +104,15 @@ public class TtRegisterService {
             return t;
         });
     
+    /**
+     * 定时任务每批拉起任务时，相邻两路启动间隔（毫秒），避免同一秒同时进入注册/ResetPhoneEnv。
+     * 第 1 路 0ms，第 2 路 350ms，…，第 10 路 3150ms。
+     */
+    private static final int SCHEDULED_PENDING_STAGGER_STEP_MS = 2000;
+
     // 4. ResetPhoneEnv接口调用并发控制信号量（按服务器分组，不同服务器可以并行）
     // 限制每个服务器同时调用ResetPhoneEnv的数量，避免服务器压力过大
-    private static final int MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER = 10; // 每个服务器最多同时10个ResetPhoneEnv调用
+    private static final int MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER = 20; // 每个服务器最多同时20个ResetPhoneEnv调用
     // 为每个服务器创建独立的信号量，不同服务器的调用可以并行
     private static final ConcurrentHashMap<String, Semaphore> resetPhoneEnvSemaphores = new ConcurrentHashMap<>();
     
@@ -135,6 +150,13 @@ public class TtRegisterService {
             CacheBuilder.newBuilder()
                     .expireAfterWrite(24, TimeUnit.HOURS)
                     .build();
+    /** IP归属地缓存，避免重复请求外部接口 */
+    private final Map<String, Map<String, String>> ipGeoCache = new ConcurrentHashMap<>();
+    /** 管理页总数缓存（方案A：列表先返回，总数异步计算） */
+    private final Map<String, Long> accountManageCountCache = new ConcurrentHashMap<>();
+    private final Set<String> accountManageCountComputing = ConcurrentHashMap.newKeySet();
+    private final Map<String, Long> windowManageCountCache = new ConcurrentHashMap<>();
+    private final Set<String> windowManageCountComputing = ConcurrentHashMap.newKeySet();
 
     /**
      * 若数据库中任务已被置为 STOPPED（如手动改库），则同步到内存并返回 true，调用方应停止执行。
@@ -202,10 +224,11 @@ public class TtRegisterService {
             
             log.info("定时任务检查：发现 {} 个待执行的云手机注册任务，开始执行", pendingTasks.size());
             
-            // 使用默认并发数 10
-            int maxConcurrency = 10;
+            // 使用默认并发数 30
+            int maxConcurrency = 30;
             Semaphore semaphore = new Semaphore(maxConcurrency);
             List<CompletableFuture<Void>> futures = new ArrayList<>();
+            AtomicInteger pendingBatchSlot = new AtomicInteger(0);
             
             for (TtRegisterTask task : pendingTasks) {
                 // 双重检查：确保任务状态仍然是 PENDING（可能被手动改为 STOPPED）
@@ -254,11 +277,22 @@ public class TtRegisterService {
                 
                 final TtRegisterTask finalTask = task;
                 final Semaphore finalDeviceLock = deviceLock; // 保存设备锁引用
+                final int staggerSlot = pendingBatchSlot.getAndIncrement();
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
-                        log.info("开始执行任务: taskId={}, taskType={}, phoneId={}, targetCount={}", 
+                        int delayMs = staggerSlot * SCHEDULED_PENDING_STAGGER_STEP_MS;
+                        if (delayMs > 0) {
+                            try {
+                                Thread.sleep(delayMs);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                log.warn("定时任务错峰等待被中断: taskId={}", finalTask.getTaskId());
+                                return;
+                            }
+                        }
+                        log.info("开始执行任务: taskId={}, taskType={}, phoneId={}, targetCount={}, staggerSlot={}, staggerDelayMs={}", 
                                 finalTask.getTaskId(), finalTask.getTaskType(), 
-                                finalTask.getPhoneId(), finalTask.getTargetCount());
+                                finalTask.getPhoneId(), finalTask.getTargetCount(), staggerSlot, delayMs);
                         
                         // 构建 resetParams Map
                         Map<String, String> resetParams = new HashMap<>();
@@ -333,7 +367,7 @@ public class TtRegisterService {
             log.info("定时任务检查：发现 {} 个待执行的主板机养号任务，开始执行", pendingTasks.size());
             
             // 使用默认并发数 10
-            int maxConcurrency = 10;
+            int maxConcurrency = 30;
             Semaphore semaphore = new Semaphore(maxConcurrency);
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             
@@ -501,7 +535,7 @@ public class TtRegisterService {
     public void recoverTasks() {
         try {
             List<TtRegisterTask> pendingTasks = ttRegisterTaskRepository.findByStatusIn(
-                Arrays.asList("PENDING", "RUNNING")
+                Arrays.asList("RUNNING")
             );
             
             if (pendingTasks.isEmpty()) {
@@ -521,23 +555,10 @@ public class TtRegisterService {
                             task.getTaskId(), task.getPhoneId());
                 }
             }
-            
-            // 延迟3秒后执行定时任务逻辑，确保应用完全启动，并统一使用定时任务的执行逻辑
-            CompletableFuture.runAsync(() -> {
-                try {
-                    Thread.sleep(3000); // 等待3秒，确保应用完全启动
-                    log.info("应用启动后延迟执行待执行任务（使用定时任务逻辑）");
-                    scheduledExecutePendingTasks(); // 执行云手机任务
-                    // scheduledExecuteMainboardTasks(); // 执行主板机任务 - 已注释（云手机部署）
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("延迟执行任务被中断", e);
-                } catch (Exception e) {
-                    log.error("延迟执行任务时出错", e);
-                }
-            }, parallelRegisterExecutor);
-            
-            log.info("任务恢复完成，将在3秒后通过定时任务逻辑执行");
+
+            // 这里不主动触发 scheduledExecutePendingTasks()，
+            // 仅等待下一个 @Scheduled 周期自然拉取，避免启动瞬间重复竞争。
+            log.info("任务恢复完成：已将 RUNNING 重置为 PENDING，等待下次定时任务扫描执行");
         } catch (Exception e) {
             log.error("恢复任务时出错", e);
         }
@@ -1322,6 +1343,9 @@ public class TtRegisterService {
             int skippedCount = 0;
             for (TtRegisterTask task : stuckTasks) {
                 try {
+                    final String stuckTaskId = task.getTaskId();
+                    final String phoneId = task.getPhoneId();
+                    
                     // 双重检查：再次从数据库查询最新状态，确保任务状态没有被手动修改为 STOPPED
                     TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
                     if (currentTask == null) {
@@ -1345,17 +1369,51 @@ public class TtRegisterService {
                         continue;
                     }
                     
-                    // 重置任务状态为 PENDING，以便重新执行
-                    task.setStatus("PENDING");
+                    // 该任务长时间未更新，且当前实现里“重置为 PENDING”不会停止实际执行线程，
+                    // 会导致 deviceLocks 仍被占用，新的调度会反复跳过。
+                    // 因此这里先请求停止（STOPPED + stoppedTaskIds），等待设备锁释放后再切回 PENDING。
+                    stoppedTaskIds.add(stuckTaskId);
+                    task.setStatus("STOPPED");
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
-                    
-                    // 从停止集合中移除（如果存在）
-                    stoppedTaskIds.remove(task.getTaskId());
-                    
                     resetCount++;
-                    log.info("任务 {} - 设备 {} 因超过1小时未更新，已重置为 PENDING 状态", 
-                            task.getTaskId(), task.getPhoneId());
+                    log.info("任务 {} - 设备 {} 因超过1小时未更新，已切换为 STOPPED 并请求停止，等待设备锁释放后再重试", 
+                            stuckTaskId, phoneId);
+
+                    CompletableFuture.runAsync(() -> {
+                        long start = System.currentTimeMillis();
+                        long timeoutMs = 10 * 60 * 1000; // 最多等待10分钟设备锁释放
+                        while (System.currentTimeMillis() - start < timeoutMs) {
+                            try {
+                                Semaphore sem = deviceLocks.get(phoneId);
+                                // sem.availablePermits() 在“占用时”为0，“空闲时”为1
+                                boolean free = (sem == null) || sem.availablePermits() > 0;
+                                if (free) {
+                                    stoppedTaskIds.remove(stuckTaskId);
+                                    TtRegisterTask latest = ttRegisterTaskRepository.findByTaskId(stuckTaskId);
+                                    if (latest != null && !"PENDING".equals(latest.getStatus())) {
+                                        latest.setStatus("PENDING");
+                                        latest.setUpdatedAt(LocalDateTime.now());
+                                        ttRegisterTaskRepository.updateById(latest);
+                                    }
+                                    log.info("任务 {} - 设备 {} 锁已释放，已切回 PENDING 以重试", stuckTaskId, phoneId);
+                                    return;
+                                }
+                            } catch (Exception e) {
+                                log.warn("任务 {} 等待设备锁释放时出错: {}", stuckTaskId, e.getMessage());
+                            }
+                            
+                            try {
+                                Thread.sleep(5000);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
+                        
+                        log.warn("任务 {} - 设备 {} 等待设备锁释放超时（{}ms），保持 STOPPED 状态以避免并发冲突",
+                                stuckTaskId, phoneId, timeoutMs);
+                    }, parallelRegisterExecutor);
                 } catch (Exception e) {
                     log.error("重置任务状态失败: taskId={}", task.getTaskId(), e);
                 }
@@ -2199,7 +2257,7 @@ public class TtRegisterService {
      * @param page 页码，从 1 开始
      * @param size 每页条数
      */
-    public Map<String, Object> getAllTasks(int page, int size) {
+    public Map<String, Object> getAllTasks(int page, int size, String taskId, String status, String serverIp) {
         List<Map<String, Object>> taskList = new ArrayList<>();
 
         if (page < 1) {
@@ -2209,16 +2267,13 @@ public class TtRegisterService {
             size = 20;
         }
 
-        // 1) 先取数据库里的任务（包含历史），按 created_at 倒序，分页
-        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TtRegisterTask> wrapper =
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-        wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
-        com.baomidou.mybatisplus.extension.plugins.pagination.Page<TtRegisterTask> pageReq =
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size);
-        com.baomidou.mybatisplus.core.metadata.IPage<TtRegisterTask> pageResult =
-                ttRegisterTaskRepository.selectPage(pageReq, wrapper);
+        int offset = (page - 1) * size;
 
-        for (TtRegisterTask task : pageResult.getRecords()) {
+        // 1) 显式分页：防止 MyBatis-Plus pagination 插件未生效时返回全量
+        long total = ttRegisterTaskRepository.countTasks(taskId, status, serverIp);
+        List<TtRegisterTask> pageRecords = ttRegisterTaskRepository.listTasksPaged(taskId, status, serverIp, offset, size);
+
+        for (TtRegisterTask task : pageRecords) {
             Map<String, Object> m = new HashMap<>();
             m.put("taskId", task.getTaskId());
             m.put("status", task.getStatus());
@@ -2250,11 +2305,9 @@ public class TtRegisterService {
             override.put("phoneIds", taskInfo.getPhoneIds());
 
             // 如果列表中已存在相同 taskId，则覆盖；否则不追加，避免打破分页大小
-            boolean replaced = false;
             for (int i = 0; i < taskList.size(); i++) {
                 if (override.get("taskId").equals(taskList.get(i).get("taskId"))) {
                     taskList.set(i, override);
-                    replaced = true;
                     break;
                 }
             }
@@ -2274,7 +2327,7 @@ public class TtRegisterService {
         Map<String, Object> result = new HashMap<>();
         result.put("success", true);
         result.put("data", taskList);
-        result.put("total", pageResult.getTotal());
+        result.put("total", total);
         result.put("page", page);
         result.put("size", size);
         return result;
@@ -2342,9 +2395,21 @@ public class TtRegisterService {
             res.put("message", "任务不存在");
             return res;
         }
+        // RUNNING 中的任务不允许直接恢复，防止并发执行
+        if ("RUNNING".equals(task.getStatus())) {
+            Map<String, Object> res = new HashMap<>();
+            res.put("success", false);
+            res.put("message", "任务正在运行中，无法恢复为待执行");
+            return res;
+        }
+
         task.setStatus("PENDING");
         task.setUpdatedAt(LocalDateTime.now());
         ttRegisterTaskRepository.updateById(task);
+
+        // 清理停止集合标记，避免再次被调度线程识别为“在停止集合中，跳过执行”
+        stoppedTaskIds.remove(taskId);
+        log.info("任务 {} 已恢复为 PENDING，已从停止集合中移除", taskId);
 
         Map<String, Object> res = new HashMap<>();
         res.put("success", true);
@@ -2409,6 +2474,17 @@ public class TtRegisterService {
      * @param emailMode 邮箱模式："random"（假邮箱）或 "outlook"（真邮箱）
      * @return 注册结果
      */
+    private void maybeRequestCreateFarmOnGaidError(String detail) {
+        if (detail == null) {
+            return;
+        }
+        try {
+            taskSchedulerService.requestCreateFarmTaskWhenGaidPoolLikelyEmpty(detail);
+        } catch (Exception e) {
+            log.warn("按需 CreateFarmTask 触发异常: {}", e.getMessage());
+        }
+    }
+
     private String registerSingleDeviceWithoutStart(String phoneId, String serverIp, int currentIndex, int totalCount, String tiktokVersionDir, Map<String, String> resetParams, String emailMode) {
         try {
             // 跳过启动步骤，直接从ResetPhoneEnv开始（设备已经在运行）
@@ -2457,7 +2533,13 @@ public class TtRegisterService {
             Map<String, Object> resetResult = null;
             String realIp = null;
             String gaid = null;
-            int maxRetries = 3;  // 统一降为3次重试，减少连接数放大
+            String state = null;
+            String city = null;
+            String model = null;
+            String buildId = null;
+            String userAgent = null;
+            String brand = null;
+            int maxRetries = 1;  // 统一降为3次重试，减少连接数放大
             int retryCount = 0;
             boolean resetSuccess = false;
             
@@ -2558,6 +2640,7 @@ public class TtRegisterService {
                                     } else {
                                         log.error("{} {} - ResetPhoneEnv重试{}次后仍失败: code={}, message={}", 
                                                 logPrefix, phoneId, maxRetries, codeStr, message);
+                                maybeRequestCreateFarmOnGaidError(message);
                                 return "FAILED: ResetPhoneEnv失败 - " + message;
                             }
                         }
@@ -2573,6 +2656,7 @@ public class TtRegisterService {
                                 } else {
                                     log.error("{} {} - ResetPhoneEnv重试{}次后仍失败: code={}, message={}", 
                                             logPrefix, phoneId, maxRetries, code, message);
+                            maybeRequestCreateFarmOnGaidError(message);
                             return "FAILED: ResetPhoneEnv失败 (code=" + code + ") - " + message;
                         }
                     }
@@ -2644,6 +2728,7 @@ public class TtRegisterService {
                     } else {
                         log.error("{} {} - ResetPhoneEnv重试{}次后仍异常，最后一次异常: {}", 
                                 logPrefix, phoneId, maxRetries, e.getMessage(), e);
+                        maybeRequestCreateFarmOnGaidError(e.getMessage());
                         return "FAILED: ResetPhoneEnv调用失败 - " + e.getMessage();
                     }
                 }
@@ -2662,11 +2747,26 @@ public class TtRegisterService {
             if (realIpObj != null) {
                 realIp = realIpObj.toString();
             }
-                Object gaidObj = resetResult.get("gaid");
-                if (gaidObj != null) {
-                    gaid = gaidObj.toString();
-                }
-            log.info("{} {} - ResetPhoneEnv成功, real_ip={}, gaid={}, 重试次数: {}", logPrefix, phoneId, realIp, gaid, retryCount);
+            Object gaidObj = resetResult.get("gaid");
+            if (gaidObj != null) {
+                gaid = gaidObj.toString();
+            }
+            Object stateObj = resetResult.get("state");
+            if (stateObj != null) state = stateObj.toString();
+            Object cityObj = resetResult.get("city");
+            if (cityObj != null) city = cityObj.toString();
+            Object modelObj = resetResult.get("model");
+            if (modelObj != null) model = modelObj.toString();
+            Object buildIdObj = resetResult.get("buildId");
+            if (buildIdObj == null) buildIdObj = resetResult.get("build_id");
+            if (buildIdObj != null) buildId = buildIdObj.toString();
+            Object userAgentObj = resetResult.get("userAgent");
+            if (userAgentObj == null) userAgentObj = resetResult.get("user_agent");
+            if (userAgentObj != null) userAgent = userAgentObj.toString();
+            Object brandObj = resetResult.get("brand");
+            if (brandObj != null) brand = brandObj.toString();
+            log.info("{} {} - ResetPhoneEnv成功, real_ip={}, gaid={}, state={}, city={}, model={}, buildId={}, brand={}, 重试次数: {}",
+                    logPrefix, phoneId, realIp, gaid, state, city, model, buildId, brand, retryCount);
 
             Thread.sleep(10000); // 等待reset和换机完成
 
@@ -2722,7 +2822,14 @@ public class TtRegisterService {
             context.setStaticIpChannel(staticIpChannel);
             context.setRealIp(realIp);
             context.setGaid(gaid);
+            context.setState(state);
+            context.setCity(city);
+            context.setModel(model);
+            context.setBuildId(buildId);
+            context.setUserAgent(userAgent);
+            context.setBrand(brand);
             context.setTiktokVersion(tiktokVersion);
+            context.setImagePath(imagePath);
             context.setCountry(country);
             // 从 resetParams 中获取 Appium 服务器地址
             String appiumServer = resetParams != null ? resetParams.getOrDefault("appiumServer", null) : null;
@@ -2746,6 +2853,7 @@ public class TtRegisterService {
             return "FAILED: 注册过程被中断";
         } catch (Exception e) {
             log.error("{} - 注册过程异常", phoneId, e);
+            maybeRequestCreateFarmOnGaidError(e.getMessage());
             return "FAILED: " + e.getMessage();
         }
     }
@@ -3262,7 +3370,14 @@ public class TtRegisterService {
         private String staticIpChannel;
         private String realIp;
         private String gaid;
+        private String state;
+        private String city;
+        private String model;
+        private String buildId;
+        private String userAgent;
+        private String brand;
         private String tiktokVersion;
+        private String imagePath;
         private String country;
         private String adbPort;
         private String appiumServer;  // Appium服务器地址
@@ -3283,8 +3398,22 @@ public class TtRegisterService {
         public void setRealIp(String realIp) { this.realIp = realIp; }
         public String getGaid() { return gaid; }
         public void setGaid(String gaid) { this.gaid = gaid; }
+        public String getState() { return state; }
+        public void setState(String state) { this.state = state; }
+        public String getCity() { return city; }
+        public void setCity(String city) { this.city = city; }
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+        public String getBuildId() { return buildId; }
+        public void setBuildId(String buildId) { this.buildId = buildId; }
+        public String getUserAgent() { return userAgent; }
+        public void setUserAgent(String userAgent) { this.userAgent = userAgent; }
+        public String getBrand() { return brand; }
+        public void setBrand(String brand) { this.brand = brand; }
         public String getTiktokVersion() { return tiktokVersion; }
         public void setTiktokVersion(String tiktokVersion) { this.tiktokVersion = tiktokVersion; }
+        public String getImagePath() { return imagePath; }
+        public void setImagePath(String imagePath) { this.imagePath = imagePath; }
         public String getCountry() { return country; }
         public void setCountry(String country) { this.country = country; }
         public String getAdbPort() { return adbPort; }
@@ -3451,6 +3580,7 @@ public class TtRegisterService {
                             log.info("{} - 超时情况下已保存Outlook邮箱信息: email={}, outlookInfo长度={}", 
                                     phoneId, partialRecord.getEmail(), 
                                     partialRecord.getOutlookInfo() != null ? partialRecord.getOutlookInfo().length() : 0);
+                            tryFetchAndPersistTrafficData(partialRecord, phoneId);
                         } else {
                             log.warn("{} - 超时情况下保存Outlook邮箱信息失败", phoneId);
                         }
@@ -3526,26 +3656,8 @@ public class TtRegisterService {
                         log.info("{} - 账号注册信息已保存到数据库: email={}, username={}, behavior={}", 
                                 phoneId, accountRegister.getEmail(), accountRegister.getUsername(), accountRegister.getBehavior());
                         
-                        // 注册成功后，调用GetTrafficData API获取流量数据并更新数据库
-                        try {
-                            String trafficData = apiService.getTrafficData(phoneId);
-                            if (trafficData != null && !trafficData.trim().isEmpty()) {
-                                // 更新流量数据到数据库
-                                accountRegister.setTrafficData(trafficData);
-                                accountRegister.setUpdatedAt(LocalDateTime.now());
-                                int updateResult = ttAccountRegisterRepository.updateById(accountRegister);
-                                if (updateResult > 0) {
-                                    log.info("{} - 流量数据已更新到数据库: trafficData={}", phoneId, trafficData);
-                                } else {
-                                    log.warn("{} - 流量数据更新失败: trafficData={}", phoneId, trafficData);
-                                }
-                            } else {
-                                log.warn("{} - 获取流量数据失败或为空", phoneId);
-                            }
-                        } catch (Exception e) {
-                            log.error("{} - 获取或更新流量数据时出错", phoneId, e);
-                            // 流量数据获取失败不影响注册成功状态
-                        }
+                        // 注册成功后拉取流量（失败场景也会消耗流量，见 tryFetchAndPersistTrafficData）
+                        tryFetchAndPersistTrafficData(accountRegister, phoneId);
                         
                         // 根据条件调用备份接口
                         // 假邮箱：is_2fa_setup_success为true且registerSuccess为true
@@ -3700,6 +3812,7 @@ public class TtRegisterService {
                             log.info("{} - 失败情况下已保存Outlook邮箱信息: email={}, outlookInfo长度={}", 
                                     phoneId, partialRecord.getEmail(), 
                                     partialRecord.getOutlookInfo() != null ? partialRecord.getOutlookInfo().length() : 0);
+                            tryFetchAndPersistTrafficData(partialRecord, phoneId);
                         } else {
                             log.warn("{} - 失败情况下保存Outlook邮箱信息失败", phoneId);
                             // 保存失败记录（没有邮箱信息）
@@ -3805,8 +3918,15 @@ public class TtRegisterService {
             
             // 设置IP地址（直接使用ResetPhoneEnv API返回的realIp）
             accountRegister.setIp(context.getRealIp());
+            accountRegister.setState(context.getState());
+            accountRegister.setCity(context.getCity());
+            accountRegister.setModel(context.getModel());
+            accountRegister.setBuildId(context.getBuildId());
+            accountRegister.setUserAgent(context.getUserAgent());
+            accountRegister.setBrand(context.getBrand());
             
             accountRegister.setTiktokVersion(context.getTiktokVersion());
+            accountRegister.setImagePath(context.getImagePath());
             // 设置国家代码
             accountRegister.setCountry(context.getCountry());
             
@@ -3888,7 +4008,14 @@ public class TtRegisterService {
             }
             accountRegister.setIpChannel(ipChannel);
             accountRegister.setIp(context.getRealIp());
+            accountRegister.setState(context.getState());
+            accountRegister.setCity(context.getCity());
+            accountRegister.setModel(context.getModel());
+            accountRegister.setBuildId(context.getBuildId());
+            accountRegister.setUserAgent(context.getUserAgent());
+            accountRegister.setBrand(context.getBrand());
             accountRegister.setTiktokVersion(context.getTiktokVersion());
+            accountRegister.setImagePath(context.getImagePath());
             
             // 复用公共解析逻辑
             boolean foundAny = parseOutputToAccountRegister(output, accountRegister);
@@ -4219,6 +4346,32 @@ public class TtRegisterService {
     }
     
     /**
+     * 注册流程结束后拉取 GetTrafficData 并写入 trafficData（成功/失败均可能消耗代理流量）
+     */
+    private void tryFetchAndPersistTrafficData(TtAccountRegister accountRegister, String phoneId) {
+        if (accountRegister == null || phoneId == null || phoneId.isEmpty()) {
+            return;
+        }
+        try {
+            String trafficData = apiService.getTrafficData(phoneId);
+            if (trafficData != null && !trafficData.trim().isEmpty()) {
+                accountRegister.setTrafficData(trafficData);
+                accountRegister.setUpdatedAt(LocalDateTime.now());
+                int updateResult = ttAccountRegisterRepository.updateById(accountRegister);
+                if (updateResult > 0) {
+                    log.info("{} - 流量数据已更新到数据库: trafficData={}", phoneId, trafficData);
+                } else {
+                    log.warn("{} - 流量数据更新失败: trafficData={}", phoneId, trafficData);
+                }
+            } else {
+                log.warn("{} - 获取流量数据失败或为空", phoneId);
+            }
+        } catch (Exception e) {
+            log.error("{} - 获取或更新流量数据时出错", phoneId, e);
+        }
+    }
+
+    /**
      * 保存注册失败记录到数据库
      * 
      * @param context 注册上下文
@@ -4256,7 +4409,14 @@ public class TtRegisterService {
             
             // 设置IP地址
             failureRecord.setIp(context.getRealIp());
+            failureRecord.setState(context.getState());
+            failureRecord.setCity(context.getCity());
+            failureRecord.setModel(context.getModel());
+            failureRecord.setBuildId(context.getBuildId());
+            failureRecord.setUserAgent(context.getUserAgent());
+            failureRecord.setBrand(context.getBrand());
             failureRecord.setTiktokVersion(context.getTiktokVersion());
+            failureRecord.setImagePath(context.getImagePath());
             // 设置国家代码
             failureRecord.setCountry(context.getCountry());
             
@@ -4273,6 +4433,7 @@ public class TtRegisterService {
             int insertResult = ttAccountRegisterRepository.insert(failureRecord);
             if (insertResult > 0) {
                 log.info("{} - 注册失败记录已保存到数据库", phoneId);
+                tryFetchAndPersistTrafficData(failureRecord, phoneId);
             } else {
                 log.warn("{} - 注册失败记录保存失败", phoneId);
             }
@@ -4306,6 +4467,7 @@ public class TtRegisterService {
             if (insertResult > 0) {
                 log.info("{} - 失败场景已保存假邮箱账号信息: email={}, username={}",
                         phoneId, record.getEmail(), record.getUsername());
+                tryFetchAndPersistTrafficData(record, phoneId);
                 return true;
             }
 
@@ -4483,13 +4645,1542 @@ public class TtRegisterService {
         log.warn("无法从phoneId提取gaidTag，使用默认值: {} -> {}", phoneId, defaultGaidTag);
         return defaultGaidTag;
     }
+
+    /**
+     * 账号管理：批量导出（同筛选条件，全量不分页，返回行列表供前端生成CSV）
+     */
+    public Map<String, Object> exportAccountList(String startDate, String endDate,
+                                                  String username, String country, String region,
+                                                  String registerStatus, String keyStatus, String matureStatus,
+                                                  String emailBindStatus, String blockStatus, String sellStatus,
+                                                  String shopStatus,
+                                                  String status, String accountType, String note,
+                                                  String sortOrder) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String safeUsername = trimToNull(username);
+            String safeCountry = trimToNull(country);
+            String safeRegion = trimToNull(region);
+            String safeRegisterStatus = trimToNull(registerStatus);
+            String safeKeyStatus = trimToNull(keyStatus);
+            String safeMatureStatus = trimToNull(matureStatus);
+            String safeEmailBindStatus = trimToNull(emailBindStatus);
+            String safeBlockStatus = trimToNull(blockStatus);
+            String safeSellStatus = trimToNull(sellStatus);
+            String safeShopStatus = trimToNull(shopStatus);
+            String safeStatus = trimToNull(status);
+            String safeAccountType = trimToNull(accountType);
+            String safeNote = trimToNull(note);
+            String safeSortOrder = normalizeSortOrder(sortOrder);
+
+            LocalDateTime start = parseDateStart(startDate);
+            LocalDateTime end = parseDateEnd(endDate);
+
+            LambdaQueryWrapper<TtAccountRegister> wrapper = new LambdaQueryWrapper<>();
+            applyAccountManageFilters(wrapper, start, end,
+                    safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote);
+            applyAccountOrder(wrapper, safeSortOrder);
+
+            List<TtAccountRegister> source = ttAccountRegisterRepository.selectList(wrapper);
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (TtAccountRegister ar : source) {
+                Map<String, Object> row = buildAccountManageRow(ar);
+                rows.add(row);
+            }
+            result.put("success", true);
+            result.put("data", rows);
+            result.put("total", rows.size());
+        } catch (Exception e) {
+            log.error("导出账号列表异常", e);
+            result.put("success", false);
+            result.put("message", "导出失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 账号管理：批量导入（按 username 匹配，有则更新，无则插入）
+     * 每条记录支持字段：username, email, password, status, note, country
+     * status 映射：封号→block_time=now(); 已售→is_sell_out=1; 可售→清除封号/售出标记
+     */
+    public Map<String, Object> batchUpsertAccounts(List<Map<String, Object>> rows) {
+        Map<String, Object> result = new HashMap<>();
+        int insertCount = 0, updateCount = 0, skipCount = 0;
+        List<String> errors = new ArrayList<>();
+
+        for (Map<String, Object> row : rows) {
+            String username = trimToNull(asString(row.get("username")));
+            if (username == null) {
+                skipCount++;
+                errors.add("跳过：username为空的行");
+                continue;
+            }
+            try {
+                TtAccountRegister existing = ttAccountRegisterRepository.findByUsername(username);
+                if (existing != null) {
+                    // 更新
+                    applyImportRow(existing, row);
+                    existing.setUpdatedAt(LocalDateTime.now());
+                    ttAccountRegisterRepository.updateById(existing);
+                    updateCount++;
+                } else {
+                    // 插入
+                    TtAccountRegister ar = new TtAccountRegister();
+                    ar.setUsername(username);
+                    ar.setPhoneId("import");   // 占位，保证非空
+                    ar.setCreatedAt(LocalDateTime.now());
+                    ar.setUpdatedAt(LocalDateTime.now());
+                    applyImportRow(ar, row);
+                    ttAccountRegisterRepository.insert(ar);
+                    insertCount++;
+                }
+            } catch (Exception e) {
+                skipCount++;
+                errors.add("username=" + username + " 处理失败: " + e.getMessage());
+                log.warn("账号导入upsert失败: username={}", username, e);
+            }
+        }
+
+        result.put("success", true);
+        result.put("insertCount", insertCount);
+        result.put("updateCount", updateCount);
+        result.put("skipCount", skipCount);
+        result.put("errors", errors);
+        result.put("message", String.format("导入完成：新增 %d 条，更新 %d 条，跳过 %d 条", insertCount, updateCount, skipCount));
+        // 导入会影响列表总数，清理总数缓存避免旧值
+        invalidateManageCountCaches();
+        return result;
+    }
+
+    /**
+     * 将导入行的字段写入账号实体
+     * 支持：email, password, status, note, country
+     */
+    private void applyImportRow(TtAccountRegister ar, Map<String, Object> row) {
+        String email = trimToNull(asString(row.get("email")));
+        if (email != null) ar.setEmail(email);
+
+        String password = trimToNull(asString(row.get("password")));
+        if (password != null) ar.setPassword(password);
+
+        String country = trimToNull(asString(row.get("country")));
+        if (country != null) ar.setCountry(country.toUpperCase(Locale.ROOT));
+
+        String note = trimToNull(asString(row.get("note")));
+        if (note != null) ar.setNote(note);
+
+        String newEmail = trimToNull(asString(row.get("new_email")));
+        if (newEmail != null) ar.setNewEmail(newEmail);
+
+        String status = trimToNull(asString(row.get("status")));
+        if (status != null) {
+            applyStatusToAccount(ar, status);
+        }
+    }
+
+    private void applyStatusToAccount(TtAccountRegister ar, String status) {
+        // 未完成不参与“写入状态”，保持原值不变（避免导入导出的数据无法回填）。
+        if ("未完成".equals(status) || "UNFINISHED".equalsIgnoreCase(status)) {
+            return;
+        }
+        if ("封号".equals(status) || "BLOCKED".equalsIgnoreCase(status) || "2FA成功-封号".equals(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            ar.setIs2faSetupSuccess(1);
+            if (ar.getBlockTime() == null) {
+                ar.setBlockTime(LocalDateTime.now());
+            }
+            return;
+        }
+        if ("已售".equals(status) || "SOLD".equalsIgnoreCase(status)) {
+            ar.setIsSellOut(1);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            return;
+        }
+        if ("可售".equals(status) || "SALEABLE".equalsIgnoreCase(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            ar.setBlockTime(null);
+            ar.setIs2faSetupSuccess(1);
+            return;
+        }
+        if ("橱窗".equals(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(1);
+            ar.setNurtureStatus(0);
+            ar.setBlockTime(null);
+            ar.setIs2faSetupSuccess(1);
+            return;
+        }
+        if ("养号".equals(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(1);
+            ar.setBlockTime(null);
+            ar.setIs2faSetupSuccess(1);
+            return;
+        }
+        if ("2FA失败".equals(status) || "2FA_FAIL".equalsIgnoreCase(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            ar.setBlockTime(null);
+            ar.setIs2faSetupSuccess(0);
+            return;
+        }
+        if ("2FA成功-正常".equals(status) || "2FA_OK_NORMAL".equalsIgnoreCase(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            ar.setIs2faSetupSuccess(1);
+            ar.setBlockTime(null);
+            return;
+        }
+        if ("换绑成功".equals(status) || "REBIND_OK".equalsIgnoreCase(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            ar.setIs2faSetupSuccess(1);
+            ar.setBlockTime(null);
+            ar.setNewEmailBindSuccess(1);
+            return;
+        }
+        if ("换绑失败".equals(status) || "REBIND_FAIL".equalsIgnoreCase(status)) {
+            ar.setIsSellOut(0);
+            ar.setShopStatus(0);
+            ar.setNurtureStatus(0);
+            ar.setIs2faSetupSuccess(1);
+            ar.setBlockTime(null);
+            ar.setNewEmailBindSuccess(0);
+            return;
+        }
+
+        // 未匹配的状态值：直接拒绝写入，保证“导入校验值”语义明确。
+        throw new IllegalArgumentException("未知状态值: " + status + "，允许值：" +
+                "2FA失败 / 2FA成功-封号 / 2FA成功-正常 / 可售 / 已售 / 换绑成功 / 换绑失败 / 养号 / 橱窗；或英文缩写如 2FA_FAIL / BLOCKED / 2FA_OK_NORMAL / SALEABLE / SOLD / REBIND_OK / REBIND_FAIL。");
+    }
+
+    /**
+     * 账号管理列表（分页+筛选）
+     * 查询区=筛选条件，展示区=分页结果。
+     */
+    public Map<String, Object> getAccountManageList(int page, int size,
+                                                    String startDate, String endDate,
+                                                    String username, String country, String region,
+                                                    String registerStatus, String keyStatus, String matureStatus,
+                                                    String emailBindStatus, String blockStatus, String sellStatus,
+                                                    String shopStatus,
+                                                    String status, String accountType, String note,
+                                                    String sortOrder) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int safePage = page < 1 ? 1 : page;
+            int safeSize = normalizeAccountPageSize(size);
+            String safeUsername = trimToNull(username);
+            String safeCountry = trimToNull(country);
+            String safeRegion = trimToNull(region);
+            String safeRegisterStatus = trimToNull(registerStatus);
+            String safeKeyStatus = trimToNull(keyStatus);
+            String safeMatureStatus = trimToNull(matureStatus);
+            String safeEmailBindStatus = trimToNull(emailBindStatus);
+            String safeBlockStatus = trimToNull(blockStatus);
+            String safeSellStatus = trimToNull(sellStatus);
+            String safeShopStatus = trimToNull(shopStatus);
+            String safeStatus = trimToNull(status);
+            String safeAccountType = trimToNull(accountType);
+            String safeNote = trimToNull(note);
+            String safeSortOrder = normalizeSortOrder(sortOrder);
+
+            LocalDateTime start = parseDateStart(startDate);
+            LocalDateTime end = parseDateEnd(endDate);
+            if (start != null && end != null && start.isAfter(end)) {
+                result.put("success", false);
+                result.put("message", "开始日期不能晚于结束日期");
+                return result;
+            }
+
+            LambdaQueryWrapper<TtAccountRegister> countWrapper = new LambdaQueryWrapper<>();
+            applyAccountManageFilters(countWrapper, start, end,
+                    safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote);
+
+            LambdaQueryWrapper<TtAccountRegister> dataWrapper = new LambdaQueryWrapper<>();
+            applyAccountManageFilters(dataWrapper, start, end,
+                    safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote);
+            // 只查列表展示所需字段，避免把大字段整行拉回造成 I/O 放大
+            dataWrapper.select(
+                    TtAccountRegister::getId,
+                    TtAccountRegister::getPhoneId,
+                    TtAccountRegister::getCreatedAt,
+                    TtAccountRegister::getBlockTime,
+                    TtAccountRegister::getIsSellOut,
+                    TtAccountRegister::getRegisterSuccess,
+                    TtAccountRegister::getIs2faSetupSuccess,
+                    TtAccountRegister::getNewEmailBindSuccess,
+                    TtAccountRegister::getNewEmail,
+                    TtAccountRegister::getUsername,
+                    TtAccountRegister::getPassword,
+                    TtAccountRegister::getEmail,
+                    TtAccountRegister::getAuthenticatorKey,
+                    TtAccountRegister::getNote,
+                    TtAccountRegister::getIp,
+                    TtAccountRegister::getState,
+                    TtAccountRegister::getCity,
+                    TtAccountRegister::getModel,
+                    TtAccountRegister::getAndroidVersion,
+                    TtAccountRegister::getCountry
+            );
+            applyAccountOrder(dataWrapper, safeSortOrder);
+
+            List<Map<String, Object>> rows = new ArrayList<>();
+            long total;
+            long totalPages;
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<TtAccountRegister> pageObj =
+                    new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(safePage, safeSize, true);
+            com.baomidou.mybatisplus.core.metadata.IPage<TtAccountRegister> pageResult =
+                    ttAccountRegisterRepository.selectPage(pageObj, dataWrapper);
+            boolean totalAccurate = true;
+            total = pageResult.getTotal();
+            totalPages = Math.max(1, (total + safeSize - 1) / safeSize);
+            for (TtAccountRegister ar : pageResult.getRecords()) {
+                rows.add(buildAccountManageRow(ar));
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("list", rows);
+            data.put("total", total);
+            data.put("page", safePage);
+            data.put("size", safeSize);
+            data.put("totalPages", totalPages);
+            data.put("totalAccurate", totalAccurate);
+            data.put("pageSizeOptions", Arrays.asList(10, 50, 100));
+
+            result.put("success", true);
+            result.put("data", data);
+            return result;
+        } catch (Exception e) {
+            log.error("查询账号管理列表异常", e);
+            result.put("success", false);
+            result.put("message", "查询账号管理列表失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    public Map<String, Object> getAccountDateSummary(String startDate, String endDate) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            LocalDateTime start = parseDateStart(startDate);
+            LocalDateTime end = parseDateEnd(endDate);
+            if (start == null || end == null) {
+                result.put("success", false);
+                result.put("message", "请提供开始日期和结束日期");
+                return result;
+            }
+            if (start.isAfter(end)) {
+                result.put("success", false);
+                result.put("message", "开始日期不能晚于结束日期");
+                return result;
+            }
+
+            LambdaQueryWrapper<TtAccountRegister> registerSuccessWrapper = new LambdaQueryWrapper<>();
+            registerSuccessWrapper.ge(TtAccountRegister::getCreatedAt, start)
+                    .le(TtAccountRegister::getCreatedAt, end)
+                    .eq(TtAccountRegister::getRegisterSuccess, true);
+            long registerSuccessCount = ttAccountRegisterRepository.selectCount(registerSuccessWrapper);
+
+            LambdaQueryWrapper<TtAccountRegister> twofaSuccessWrapper = new LambdaQueryWrapper<>();
+            twofaSuccessWrapper.ge(TtAccountRegister::getCreatedAt, start)
+                    .le(TtAccountRegister::getCreatedAt, end)
+                    .eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            long twofaSuccessCount = ttAccountRegisterRepository.selectCount(twofaSuccessWrapper);
+
+            double twofaRate = registerSuccessCount <= 0
+                    ? 0D
+                    : (twofaSuccessCount * 100.0D / registerSuccessCount);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("registerSuccessCount", registerSuccessCount);
+            data.put("twofaSuccessCount", twofaSuccessCount);
+            data.put("twofaRate", Math.round(twofaRate * 100.0D) / 100.0D);
+            result.put("success", true);
+            result.put("data", data);
+            return result;
+        } catch (Exception e) {
+            log.error("按日期统计账号数据失败: startDate={}, endDate={}", startDate, endDate, e);
+            result.put("success", false);
+            result.put("message", "统计失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * 账号管理：在当前筛选结果集内统计各维度数量（用于占比展示；与列表 WHERE 一致，再叠加各子条件做拆分）
+     */
+    public Map<String, Object> getAccountFilterStats(String startDate, String endDate,
+                                                     String username, String country, String region,
+                                                     String registerStatus, String keyStatus, String matureStatus,
+                                                     String emailBindStatus, String blockStatus, String sellStatus,
+                                                     String shopStatus,
+                                                     String status, String accountType, String note) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String safeUsername = trimToNull(username);
+            String safeCountry = trimToNull(country);
+            String safeRegion = trimToNull(region);
+            String safeRegisterStatus = trimToNull(registerStatus);
+            String safeKeyStatus = trimToNull(keyStatus);
+            String safeMatureStatus = trimToNull(matureStatus);
+            String safeEmailBindStatus = trimToNull(emailBindStatus);
+            String safeBlockStatus = trimToNull(blockStatus);
+            String safeSellStatus = trimToNull(sellStatus);
+            String safeShopStatus = trimToNull(shopStatus);
+            String safeStatus = trimToNull(status);
+            String safeAccountType = trimToNull(accountType);
+            String safeNote = trimToNull(note);
+
+            LocalDateTime start = parseDateStart(startDate);
+            LocalDateTime end = parseDateEnd(endDate);
+            if (start != null && end != null && start.isAfter(end)) {
+                result.put("success", false);
+                result.put("message", "开始日期不能晚于结束日期");
+                return result;
+            }
+
+            LocalDate matureCutoffDate = LocalDate.now().minusMonths(1);
+            LocalDateTime matureCutoffEnd = matureCutoffDate.atTime(23, 59, 59);
+
+            long total = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, null);
+
+            long regOk = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getRegisterSuccess, true));
+            long regFail = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getRegisterSuccess, false));
+
+            long keyOk = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getIs2faSetupSuccess, 1));
+            long keyFail = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.in(TtAccountRegister::getIs2faSetupSuccess, 0, 2));
+
+            long mat = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.le(TtAccountRegister::getCreatedAt, matureCutoffEnd));
+            long unmat = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.gt(TtAccountRegister::getCreatedAt, matureCutoffEnd));
+
+            long eb1 = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getNewEmailBindSuccess, 1));
+            long eb0 = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getNewEmailBindSuccess, 0));
+            long ebNull = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.isNull(TtAccountRegister::getNewEmailBindSuccess));
+
+            long blk = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.isNotNull(TtAccountRegister::getBlockTime));
+            long unblk = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.isNull(TtAccountRegister::getBlockTime));
+
+            long sold = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getIsSellOut, 1));
+            long saleable = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> applySaleableStrictFilter(w, matureCutoffEnd));
+            long sellOther = Math.max(0L, total - sold - saleable);
+
+            String shopGaidSql = "SELECT DISTINCT gaid FROM tt_follow_details_new " +
+                    "WHERE shop_status = 3 AND gaid IS NOT NULL AND gaid <> ''";
+            String shopUserSql = "SELECT DISTINCT username FROM tt_follow_details_new " +
+                    "WHERE shop_status = 3 AND username IS NOT NULL AND username <> ''";
+            long winShop = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.inSql(TtAccountRegister::getGaid, shopGaidSql)
+                            .inSql(TtAccountRegister::getUsername, shopUserSql));
+            String notShopSql = "NOT (tt_account_register.gaid IN (" + shopGaidSql + ") AND tt_account_register.username IN (" + shopUserSql + "))";
+            long winMatrix = countWithAccountManageFilters(start, end, safeUsername, safeCountry, safeRegion,
+                    safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                    safeStatus, safeAccountType, safeNote, w -> w.eq(TtAccountRegister::getNurtureStatus, 1).apply(notShopSql));
+            long winOther = Math.max(0L, total - winShop - winMatrix);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("total", total);
+            Map<String, Object> register = new HashMap<>();
+            register.put("success", regOk);
+            register.put("fail", regFail);
+            data.put("register", register);
+            Map<String, Object> key = new HashMap<>();
+            key.put("success", keyOk);
+            key.put("fail", keyFail);
+            data.put("key", key);
+            Map<String, Object> mature = new HashMap<>();
+            mature.put("mature", mat);
+            mature.put("unmature", unmat);
+            data.put("mature", mature);
+            Map<String, Object> emailBind = new HashMap<>();
+            emailBind.put("success", eb1);
+            emailBind.put("fail", eb0);
+            emailBind.put("none", ebNull);
+            data.put("emailBind", emailBind);
+            Map<String, Object> block = new HashMap<>();
+            block.put("blocked", blk);
+            block.put("unblocked", unblk);
+            data.put("block", block);
+            Map<String, Object> sell = new HashMap<>();
+            sell.put("sold", sold);
+            sell.put("saleable", saleable);
+            sell.put("other", sellOther);
+            data.put("sell", sell);
+            Map<String, Object> window = new HashMap<>();
+            window.put("shop", winShop);
+            window.put("matrix", winMatrix);
+            window.put("other", winOther);
+            data.put("window", window);
+
+            result.put("success", true);
+            result.put("data", data);
+            return result;
+        } catch (Exception e) {
+            log.error("账号筛选结果统计失败", e);
+            result.put("success", false);
+            result.put("message", "统计失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    private void applySaleableStrictFilter(LambdaQueryWrapper<TtAccountRegister> wrapper, LocalDateTime matureCutoffEnd) {
+        // 可售的统一定义（不再额外限制橱窗/矩阵/换绑状态）：
+        // 1) 未标记已售
+        wrapper.apply("(is_sell_out <> 1 OR is_sell_out IS NULL)");
+        // 2) 2FA 成功
+        wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+        // 3) 未封号
+        wrapper.isNull(TtAccountRegister::getBlockTime);
+        // 4) 已满月
+        wrapper.le(TtAccountRegister::getCreatedAt, matureCutoffEnd);
+    }
+
+    private long countWithAccountManageFilters(LocalDateTime start, LocalDateTime end,
+                                               String safeUsername, String safeCountry, String safeRegion,
+                                               String safeRegisterStatus, String safeKeyStatus, String safeMatureStatus,
+                                               String safeEmailBindStatus, String safeBlockStatus, String safeSellStatus, String safeShopStatus,
+                                               String safeStatus, String safeAccountType, String safeNote,
+                                               Consumer<LambdaQueryWrapper<TtAccountRegister>> extra) {
+        LambdaQueryWrapper<TtAccountRegister> w = new LambdaQueryWrapper<>();
+        applyAccountManageFilters(w, start, end, safeUsername, safeCountry, safeRegion,
+                safeRegisterStatus, safeKeyStatus, safeMatureStatus, safeEmailBindStatus, safeBlockStatus, safeSellStatus, safeShopStatus,
+                safeStatus, safeAccountType, safeNote);
+        if (extra != null) {
+            extra.accept(w);
+        }
+        return ttAccountRegisterRepository.selectCount(w);
+    }
+
+    public Map<String, Object> getAccountDetail(Long id) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (id == null || id <= 0) {
+                result.put("success", false);
+                result.put("message", "id无效");
+                return result;
+            }
+            TtAccountRegister ar = ttAccountRegisterRepository.selectById(id);
+            if (ar == null) {
+                result.put("success", false);
+                result.put("message", "账号不存在");
+                return result;
+            }
+            Map<String, Object> row = buildAccountManageRow(ar);
+            row.put("authenticatorKey", ar.getAuthenticatorKey());
+            row.put("registerSuccess", ar.getRegisterSuccess());
+            row.put("is2faSetupSuccess", ar.getIs2faSetupSuccess());
+            row.put("newEmailBindSuccess", ar.getNewEmailBindSuccess());
+            result.put("success", true);
+            result.put("data", row);
+            return result;
+        } catch (Exception e) {
+            log.error("查询账号详情失败: id={}", id, e);
+            result.put("success", false);
+            result.put("message", "查询详情失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    public Map<String, Object> updateAccount(Map<String, Object> request) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (request == null) {
+                result.put("success", false);
+                result.put("message", "请求不能为空");
+                return result;
+            }
+            Long id = null;
+            Object idObj = request.get("id");
+            if (idObj instanceof Number) {
+                id = ((Number) idObj).longValue();
+            } else if (idObj instanceof String) {
+                try {
+                    id = Long.parseLong(((String) idObj).trim());
+                } catch (Exception ignored) {
+                }
+            }
+            if (id == null || id <= 0) {
+                result.put("success", false);
+                result.put("message", "id无效");
+                return result;
+            }
+
+            TtAccountRegister ar = ttAccountRegisterRepository.selectById(id);
+            if (ar == null) {
+                result.put("success", false);
+                result.put("message", "账号不存在");
+                return result;
+            }
+
+            String email = trimToNull(asString(request.get("email")));
+            if (email != null) ar.setEmail(email);
+            String password = trimToNull(asString(request.get("password")));
+            if (password != null) ar.setPassword(password);
+            String note = trimToNull(asString(request.get("note")));
+            if (note != null || request.containsKey("note")) ar.setNote(note);
+            String country = trimToNull(asString(request.get("country")));
+            if (country != null) ar.setCountry(country.toUpperCase(Locale.ROOT));
+            String authenticatorKey = trimToNull(asString(request.get("authenticatorKey")));
+            if (authenticatorKey != null || request.containsKey("authenticatorKey")) ar.setAuthenticatorKey(authenticatorKey);
+            String newEmail = trimToNull(asString(request.get("newEmail")));
+            if (newEmail != null || request.containsKey("newEmail")) ar.setNewEmail(newEmail);
+
+            String status = trimToNull(asString(request.get("status")));
+            if (status != null) {
+                applyStatusToAccount(ar, status);
+            }
+
+            if (request.containsKey("newEmailBindSuccess")) {
+                Integer newEmailBindSuccess = toNullableInt(request.get("newEmailBindSuccess"));
+                ar.setNewEmailBindSuccess(newEmailBindSuccess);
+            }
+
+            ar.setUpdatedAt(LocalDateTime.now());
+            ttAccountRegisterRepository.updateById(ar);
+            invalidateManageCountCaches();
+
+            result.put("success", true);
+            result.put("message", "更新成功");
+            Map<String, Object> row = buildAccountManageRow(ar);
+            row.put("authenticatorKey", ar.getAuthenticatorKey());
+            result.put("data", row);
+            return result;
+        } catch (Exception e) {
+            log.error("更新账号失败: request={}", request, e);
+            result.put("success", false);
+            result.put("message", "更新失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    /**
+     * 账号管理：开始养号（勾选批量）
+     * 1) 将 tt_account_register.nurture_status 更新为 1
+     * 2) 向 tt_follow_details_new 插入一条养号记录（用于后续开窗/养号链路）
+     */
+    @Transactional
+    public Map<String, Object> startNurtureAccounts(List<Long> accountIds) {
+        Map<String, Object> result = new HashMap<>();
+        if (accountIds == null || accountIds.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "请先勾选账号");
+            return result;
+        }
+        int updatedCount = 0;
+        int insertedCount = 0;
+        int skipCount = 0;
+        List<String> errors = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+        for (Long id : accountIds) {
+            if (id == null || id <= 0) {
+                skipCount++;
+                continue;
+            }
+            try {
+                TtAccountRegister ar = ttAccountRegisterRepository.selectById(id);
+                if (ar == null) {
+                    skipCount++;
+                    continue;
+                }
+
+                // 更新账号表养号状态
+                ar.setNurtureStatus(1);
+                ar.setUpdatedAt(now);
+                ttAccountRegisterRepository.updateById(ar);
+                updatedCount++;
+
+                // 插入 follow 明细（按需求：每次点击都插入一条）
+                TtFollowDetailsNew follow = new TtFollowDetailsNew();
+                follow.setPhoneId(ar.getPhoneId());
+                follow.setPhoneServerId(ar.getPhoneServerIp());
+                follow.setGaid(ar.getGaid());
+                follow.setAndroidVersion(ar.getAndroidVersion());
+                follow.setTiktokVersion(ar.getTiktokVersion());
+                follow.setUsername(ar.getUsername());
+                follow.setRegisterTime(ar.getRegisterTime());
+                follow.setCreatedAt(now);
+                follow.setIp(ar.getIp());
+                follow.setAuthenticatorKey(ar.getAuthenticatorKey());
+                follow.setNote(ar.getNote());
+                follow.setPassword(ar.getPassword());
+                follow.setUploadStatus(0);
+                follow.setShopStatus(0);
+                follow.setNurtureStatus(1);
+                follow.setCountry(ar.getCountry());
+                ttFollowDetailsNewRepository.insert(follow);
+                insertedCount++;
+            } catch (Exception e) {
+                skipCount++;
+                errors.add("id=" + id + " 处理失败: " + e.getMessage());
+                log.warn("开始养号失败: id={}", id, e);
+            }
+        }
+
+        result.put("success", true);
+        result.put("updatedCount", updatedCount);
+        result.put("insertedCount", insertedCount);
+        result.put("skipCount", skipCount);
+        result.put("errors", errors);
+        result.put("message", String.format("开始养号完成：更新%d条，插入%d条，跳过%d条", updatedCount, insertedCount, skipCount));
+        invalidateManageCountCaches();
+        return result;
+    }
+
+    private void applyAccountManageFilters(LambdaQueryWrapper<TtAccountRegister> wrapper,
+                                           LocalDateTime start, LocalDateTime end,
+                                           String safeUsername, String safeCountry, String safeRegion,
+                                           String safeRegisterStatus, String safeKeyStatus,
+                                           String safeMatureStatus, String safeEmailBindStatus,
+                                           String safeBlockStatus, String safeSellStatus, String safeShopStatus,
+                                           String safeStatus, String safeAccountType, String safeNote) {
+        // 注册状态筛选：仅当前端显式选择 SUCCESS 或 FAIL 时才加条件；
+        // 否则不过滤 register_success，展示成功+失败的全部账号。
+        if ("SUCCESS".equalsIgnoreCase(safeRegisterStatus)) {
+            wrapper.eq(TtAccountRegister::getRegisterSuccess, true);
+        } else if ("FAIL".equalsIgnoreCase(safeRegisterStatus)) {
+            wrapper.eq(TtAccountRegister::getRegisterSuccess, false);
+        }
+
+        if (start != null) {
+            wrapper.ge(TtAccountRegister::getCreatedAt, start);
+        }
+        if (end != null) {
+            wrapper.le(TtAccountRegister::getCreatedAt, end);
+        }
+        if (safeUsername != null) {
+            // 账号优先前缀匹配，可利用普通索引
+            wrapper.likeRight(TtAccountRegister::getUsername, safeUsername);
+        }
+        if (safeNote != null) {
+            wrapper.like(TtAccountRegister::getNote, safeNote);
+        }
+        if (safeRegion != null) {
+            // 地区改前缀匹配，提高索引命中率
+            wrapper.likeRight(TtAccountRegister::getState, safeRegion);
+        }
+
+        boolean useNewFilters = safeRegisterStatus != null || safeKeyStatus != null || safeMatureStatus != null ||
+                safeEmailBindStatus != null || safeBlockStatus != null || safeSellStatus != null || safeShopStatus != null;
+
+        if (useNewFilters) {
+            LocalDate matureCutoffDate = LocalDate.now().minusMonths(1);
+            LocalDateTime matureCutoffEnd = matureCutoffDate.atTime(23, 59, 59);
+
+            // 密钥
+            if (safeKeyStatus != null && !"ALL".equalsIgnoreCase(safeKeyStatus)) {
+                if ("SUCCESS".equalsIgnoreCase(safeKeyStatus)) {
+                    wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+                } else if ("FAIL".equalsIgnoreCase(safeKeyStatus)) {
+                    wrapper.in(TtAccountRegister::getIs2faSetupSuccess, 0, 2);
+                }
+            }
+
+            // 满月/未满：仅按注册日期与「满月」分界，不叠加 is_2fa_setup_success（便于与密钥等维度任意组合）
+            if (safeMatureStatus != null && !"ALL".equalsIgnoreCase(safeMatureStatus)) {
+                if ("MATURE".equalsIgnoreCase(safeMatureStatus)) {
+                    wrapper.le(TtAccountRegister::getCreatedAt, matureCutoffEnd);
+                } else if ("UNMATURE".equalsIgnoreCase(safeMatureStatus)) {
+                    wrapper.gt(TtAccountRegister::getCreatedAt, matureCutoffEnd);
+                }
+            }
+
+            // 封号/未封：仅看 block_time，不叠加其它字段
+            if (safeBlockStatus != null && !"ALL".equalsIgnoreCase(safeBlockStatus)) {
+                if ("BLOCKED".equalsIgnoreCase(safeBlockStatus)) {
+                    wrapper.isNotNull(TtAccountRegister::getBlockTime);
+                } else if ("UNBLOCKED".equalsIgnoreCase(safeBlockStatus)) {
+                    wrapper.isNull(TtAccountRegister::getBlockTime);
+                }
+            }
+
+            // 邮绑：仅 new_email_bind_success，不叠加
+            if (safeEmailBindStatus != null && !"ALL".equalsIgnoreCase(safeEmailBindStatus)) {
+                if ("SUCCESS".equalsIgnoreCase(safeEmailBindStatus)) {
+                    wrapper.eq(TtAccountRegister::getNewEmailBindSuccess, 1);
+                } else if ("FAIL".equalsIgnoreCase(safeEmailBindStatus)) {
+                    wrapper.eq(TtAccountRegister::getNewEmailBindSuccess, 0);
+                }
+            }
+
+            // 已售：仅 is_sell_out=1；可售：统一按“未售 + 2FA成功 + 未封号 + 满月”定义
+            if (safeSellStatus != null && !"ALL".equalsIgnoreCase(safeSellStatus)) {
+                if ("SOLD".equalsIgnoreCase(safeSellStatus)) {
+                    wrapper.eq(TtAccountRegister::getIsSellOut, 1);
+                } else if ("SALEABLE".equalsIgnoreCase(safeSellStatus)) {
+                    applySaleableStrictFilter(wrapper, matureCutoffEnd);
+                }
+            }
+
+            // 橱窗号：follow 明细 shop_status=3；矩阵号：账号表 nurture_status=1（与其它维度仅 AND，互不叠加隐含条件）
+            if (safeShopStatus != null && !"ALL".equalsIgnoreCase(safeShopStatus)) {
+                if ("SHOP".equalsIgnoreCase(safeShopStatus)) {
+                    wrapper.inSql(TtAccountRegister::getGaid,
+                            "SELECT DISTINCT gaid FROM tt_follow_details_new " +
+                                    "WHERE shop_status = 3 AND gaid IS NOT NULL AND gaid <> ''")
+                            .inSql(TtAccountRegister::getUsername,
+                                    "SELECT DISTINCT username FROM tt_follow_details_new " +
+                                            "WHERE shop_status = 3 AND username IS NOT NULL AND username <> ''");
+                } else if ("MATRIX".equalsIgnoreCase(safeShopStatus)) {
+                    wrapper.eq(TtAccountRegister::getNurtureStatus, 1);
+                }
+            }
+        } else {
+            // 兼容旧前端：使用单一 status/accountType 参数
+            applyAccountStatusFilter(wrapper, safeStatus);
+            applyAccountTypeFilter(wrapper, safeAccountType);
+        }
+
+        if (safeCountry != null) {
+            wrapper.eq(TtAccountRegister::getCountry, safeCountry.toUpperCase(Locale.ROOT));
+        }
+    }
+
+    private long estimateTotalWithoutCount(int page, int size, int currentSize) {
+        long base = (long) (page - 1) * size + currentSize;
+        if (currentSize >= size) {
+            // 至少还有一页的可能，给前端保留“下一页”入口
+            return base + 1;
+        }
+        return base;
+    }
+
+    private String buildAccountManageCountKey(String startDate, String endDate, String safeEmail, String safeCountry,
+                                              String safeRegion, String safeStatus, String safeAccountType, String safeNote) {
+        return String.join("|",
+                String.valueOf(trimToNull(startDate)),
+                String.valueOf(trimToNull(endDate)),
+                String.valueOf(safeEmail),
+                String.valueOf(safeCountry),
+                String.valueOf(safeRegion),
+                String.valueOf(safeStatus),
+                String.valueOf(safeAccountType),
+                String.valueOf(safeNote));
+    }
+
+    private void triggerAsyncAccountManageCount(String key, LambdaQueryWrapper<TtAccountRegister> countWrapper) {
+        if (!accountManageCountComputing.add(key)) return;
+        CompletableFuture.runAsync(() -> {
+            try {
+                long exact = ttAccountRegisterRepository.selectCount(countWrapper);
+                accountManageCountCache.put(key, exact);
+            } catch (Exception e) {
+                log.warn("账号管理异步count失败: key={}", key, e);
+            } finally {
+                accountManageCountComputing.remove(key);
+            }
+        }, scheduledTaskExecutor);
+    }
+
+    private int normalizeAccountPageSize(int size) {
+        if (size == 10 || size == 50 || size == 100) {
+            return size;
+        }
+        return 10;
+    }
+
+    private String normalizeSortOrder(String sortOrder) {
+        if ("asc".equalsIgnoreCase(trimToNull(sortOrder))) {
+            return "asc";
+        }
+        return "desc";
+    }
+
+    private void applyAccountOrder(LambdaQueryWrapper<TtAccountRegister> wrapper, String sortOrder) {
+        if ("asc".equalsIgnoreCase(sortOrder)) {
+            wrapper.orderByAsc(TtAccountRegister::getCreatedAt);
+            wrapper.orderByAsc(TtAccountRegister::getId);
+            return;
+        }
+        wrapper.orderByDesc(TtAccountRegister::getCreatedAt);
+        wrapper.orderByDesc(TtAccountRegister::getId);
+    }
+
+    private void applyAccountStatusFilter(LambdaQueryWrapper<TtAccountRegister> wrapper, String status) {
+        if (status == null || status.isEmpty() || "ALL".equalsIgnoreCase(status) || "全部".equals(status)) {
+            return;
+        }
+        if ("2FA失败".equals(status) || "2FA_FAIL".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 0);
+            return;
+        }
+        if ("养号".equals(status)) {
+            wrapper.eq(TtAccountRegister::getNurtureStatus, 1);
+            return;
+        }
+        if ("橱窗".equals(status)) {
+            // 橱窗筛选改为按 follow 明细表判定：
+            // tt_account_register 通过 gaid 和 username 同时关联 tt_follow_details_new，
+            // 且 follow.shop_status = 3 才视为橱窗号。
+            wrapper.inSql(TtAccountRegister::getGaid,
+                            "SELECT DISTINCT gaid FROM tt_follow_details_new " +
+                                    "WHERE shop_status = 3 AND gaid IS NOT NULL AND gaid <> ''")
+                    .inSql(TtAccountRegister::getUsername,
+                            "SELECT DISTINCT username FROM tt_follow_details_new " +
+                                    "WHERE shop_status = 3 AND username IS NOT NULL AND username <> ''");
+            return;
+        }
+        if ("已售".equals(status) || "SOLD".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIsSellOut, 1);
+            return;
+        }
+        if ("2FA成功-封号".equals(status) || "封号".equals(status) || "BLOCKED".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.isNotNull(TtAccountRegister::getBlockTime);
+            return;
+        }
+        if ("2FA成功-正常".equals(status) || "2FA_OK_NORMAL".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.isNull(TtAccountRegister::getBlockTime);
+            return;
+        }
+        if ("可售".equals(status) || "SALEABLE".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.isNull(TtAccountRegister::getBlockTime);
+            wrapper.le(TtAccountRegister::getCreatedAt, LocalDateTime.now().minusMonths(1));
+            return;
+        }
+        if ("换绑成功".equals(status) || "REBIND_OK".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.isNull(TtAccountRegister::getBlockTime);
+            wrapper.le(TtAccountRegister::getCreatedAt, LocalDateTime.now().minusMonths(1));
+            wrapper.eq(TtAccountRegister::getNewEmailBindSuccess, 1);
+            return;
+        }
+        if ("换绑失败".equals(status) || "REBIND_FAIL".equalsIgnoreCase(status)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.isNull(TtAccountRegister::getBlockTime);
+            wrapper.le(TtAccountRegister::getCreatedAt, LocalDateTime.now().minusMonths(1));
+            wrapper.eq(TtAccountRegister::getNewEmailBindSuccess, 0);
+        }
+    }
+
+    private void applyAccountTypeFilter(LambdaQueryWrapper<TtAccountRegister> wrapper, String accountType) {
+        if (accountType == null || accountType.isEmpty() || "ALL".equalsIgnoreCase(accountType) || "全部".equals(accountType)) {
+            return;
+        }
+        LocalDateTime threshold = LocalDateTime.now().minusMonths(1);
+        if ("满月白".equals(accountType) || "MATURE_WHITE".equalsIgnoreCase(accountType)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.le(TtAccountRegister::getCreatedAt, threshold);
+            return;
+        }
+        if ("小白号".equals(accountType) || "NEW_WHITE".equalsIgnoreCase(accountType)) {
+            wrapper.eq(TtAccountRegister::getIs2faSetupSuccess, 1);
+            wrapper.gt(TtAccountRegister::getCreatedAt, threshold);
+        }
+    }
+
+    private LocalDateTime parseDateStart(String dateText) {
+        String value = trimToNull(dateText);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value).atStartOfDay();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("startDate格式错误，应为yyyy-MM-dd");
+        }
+    }
+
+    private LocalDateTime parseDateEnd(String dateText) {
+        String value = trimToNull(dateText);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value).atTime(23, 59, 59);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("endDate格式错误，应为yyyy-MM-dd");
+        }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.trim();
+        return v.isEmpty() ? null : v;
+    }
+
+    private Map<String, Object> buildAccountManageRow(TtAccountRegister ar) {
+        Map<String, Object> row = new HashMap<>();
+        String geoRegion = trimToNull(ar.getState()) != null ? ar.getState() : "";
+        String geoCity = trimToNull(ar.getCity()) != null ? ar.getCity() : "";
+        String geoCountry = trimToNull(ar.getCountry()) != null ? ar.getCountry() : "";
+
+        row.put("id", ar.getId());
+        row.put("phoneId", ar.getPhoneId());
+        row.put("createdAt", ar.getCreatedAt() != null ? ar.getCreatedAt().toString() : null);
+        row.put("registerDate", ar.getCreatedAt() != null ? ar.getCreatedAt().toString() : null);
+        row.put("status", calcAccountStatus(ar));
+        row.put("newEmailBindSuccess", ar.getNewEmailBindSuccess());
+        row.put("newEmailBindStatus", mapNewEmailBindStatus(ar.getNewEmailBindSuccess()));
+        row.put("newEmail", ar.getNewEmail());
+        row.put("username", ar.getUsername());
+        row.put("password", ar.getPassword());
+        row.put("email", ar.getEmail());
+        row.put("authenticatorKey", ar.getAuthenticatorKey());
+        row.put("loginMethod", "2fa");
+        row.put("accountType", calcAccountType(ar));
+        row.put("note", ar.getNote());
+        row.put("ip", ar.getIp());
+        row.put("state", geoRegion);
+        row.put("city", geoCity);
+        row.put("model", ar.getModel());
+        row.put("androidVersion", ar.getAndroidVersion());
+        row.put("country", geoCountry);
+        row.put("geoRegion", geoRegion);   // 供内存过滤使用
+        row.put("geoCity", geoCity);
+        // 展示区"详情"：ip--州--城市--机型--安卓系统版本
+        row.put("detail", String.format("%s--%s--%s--%s--%s",
+                asString(ar.getIp()), geoRegion, geoCity,
+                asString(ar.getModel()), asString(ar.getAndroidVersion())));
+        return row;
+    }
+
+    private String mapNewEmailBindStatus(Integer v) {
+        if (v == null) return "未换绑";
+        if (v == 1) return "换绑成功";
+        if (v == 0) return "换绑失败";
+        return "未换绑";
+    }
+
+    private String calcAccountStatus(TtAccountRegister ar) {
+        // 注册失败优先展示（用于前端“注册失败/注册成功”筛选）
+        if (ar.getRegisterSuccess() != null && !ar.getRegisterSuccess()) {
+            return "注册失败";
+        }
+        // 已售优先级最高：只要 is_sell_out=1，状态就固定展示为“已售”
+        if (ar.getIsSellOut() != null && ar.getIsSellOut() == 1) {
+            return "已售";
+        }
+        // 其次是“橱窗”：已开窗优先展示为“橱窗”
+        if (ar.getShopStatus() != null && ar.getShopStatus() == 1) {
+            return "橱窗";
+        }
+        // 再次是“养号”：标记为养号且未开窗
+        if (ar.getNurtureStatus() != null && ar.getNurtureStatus() == 1) {
+            return "养号";
+        }
+        Integer twofa = ar.getIs2faSetupSuccess();
+        boolean isMature = isMatureAccount(ar.getCreatedAt());
+
+        if (twofa != null && twofa == 0) {
+            return "2FA失败";
+        }
+        if (twofa != null && twofa == 1 && ar.getBlockTime() != null) {
+            return "2FA成功-封号";
+        }
+        if (twofa != null && twofa == 1 && ar.getBlockTime() == null) {
+            // 2FA 成功且未封号：满月统一视为“可售”，不再被换绑结果覆盖；
+            // 换绑仅通过“换绑状态”列展示。
+            if (isMature) {
+                return "可售";
+            }
+            return "2FA成功-正常";
+        }
+        return "未完成";
+    }
+
+    private String calcAccountType(TtAccountRegister ar) {
+        if (ar.getIs2faSetupSuccess() == null || ar.getIs2faSetupSuccess() != 1 || ar.getBlockTime() != null) {
+            return "-";
+        }
+        if (isMatureAccount(ar.getCreatedAt())) {
+            return "满月白";
+        }
+        return "小白号";
+    }
+
+    private boolean isMatureAccount(LocalDateTime createdAt) {
+        if (createdAt == null) return false;
+        LocalDate cutoffDate = LocalDate.now().minusMonths(1);
+        LocalDate createdDate = createdAt.toLocalDate();
+        return createdDate.isBefore(cutoffDate) || createdDate.isEqual(cutoffDate);
+    }
+
+    private String asString(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private Integer toNullableInt(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number) return ((Number) value).intValue();
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty() || "null".equalsIgnoreCase(text) || "-1".equals(text)) return null;
+        try {
+            return Integer.parseInt(text);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 查看设备：按 gaid 恢复历史环境到指定 phone_id，并返回本地调试命令
+     */
+    public Map<String, Object> inspectDeviceByPhoneAndGaid(String phoneId, String gaid) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String safePhoneId = trimToNull(phoneId);
+            String safeGaid = trimToNull(gaid);
+            if (safePhoneId == null || safeGaid == null) {
+                result.put("success", false);
+                result.put("message", "phone_id 和 gaid 不能为空");
+                return result;
+            }
+
+            TtAccountRegister gaidRecord = ttAccountRegisterRepository.findLatestByGaid(safeGaid);
+            if (gaidRecord == null) {
+                result.put("success", false);
+                result.put("message", "未找到该 gaid 对应的历史记录");
+                return result;
+            }
+            TtAccountRegister phoneRecord = ttAccountRegisterRepository.findLatestByPhoneId(safePhoneId);
+            if (phoneRecord == null || trimToNull(phoneRecord.getPhoneServerIp()) == null) {
+                result.put("success", false);
+                result.put("message", "未找到该 phone_id 对应的 server_ip");
+                return result;
+            }
+
+            String targetServerIp = phoneRecord.getPhoneServerIp();
+            String packageName = "com.zhiliaoapp.musically";
+            final String fallbackImageTag = "20260228";
+            String imagePath = trimToNull(gaidRecord.getImagePath());
+            if (imagePath == null) {
+                // image_path 为空时走原有逻辑（默认镜像）
+                imagePath = trimToNull(defaultImage);
+                if (imagePath == null) imagePath = "";
+                // 按需求：image_path 为空时，默认日期标记固定为 20260228
+                imagePath = applyImageDateTag(imagePath, fallbackImageTag);
+            }
+            // image_path 中含 android 版本段时，统一按该 gaid 备份记录的安卓版本校正
+            imagePath = adjustImagePathForAndroidVersion(imagePath, gaidRecord.getAndroidVersion());
+
+            apiService.restoreApp(safePhoneId, targetServerIp, packageName, imagePath, safeGaid);
+
+            // 恢复成功后查询容器 adb 端口映射（默认 5555/tcp）
+            String portCmd = String.format(
+                    "(docker ps | grep -w %s | tail -1 | awk '{print $(NF-1)}' | awk -F ':' '{print $2}' | awk -F '-' '{print $1}' || true)",
+                    safePhoneId);
+            SshUtil.SshResult portResult = sshCommand(targetServerIp, portCmd);
+            String adbPort = extractMappedPort(portResult.getOutput());
+            if (adbPort == null) {
+                adbPort = extractMappedPort(portResult.getErrorOutput());
+            }
+
+            if (adbPort == null) {
+                if (!portResult.isSuccess()) {
+                    result.put("success", false);
+                    result.put("message", "恢复成功，但查询端口失败: " + buildSshErrorMessage(portResult));
+                    return result;
+                }
+                result.put("success", false);
+                result.put("message", "恢复成功，但未解析到 ADB 端口，输出: " + asString(portResult.getOutput()));
+                return result;
+            }
+
+            String tunnelHost = trimToNull(sshProperties.getSshJumpHost());
+            if (tunnelHost == null) {
+                tunnelHost = trimToNull(targetServerIp);
+            }
+            String tunnelUser = trimToNull(sshProperties.getSshJumpUsername());
+            if (tunnelUser == null) tunnelUser = "ubuntu";
+
+            String localPort = "3334";
+            String tunnelCmd = String.format("ssh -N -L %s:%s:%s %s@%s",
+                    localPort, targetServerIp, adbPort, tunnelUser, tunnelHost);
+            String adbCmd = String.format("adb connect localhost:%s", localPort);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("phoneId", safePhoneId);
+            data.put("gaid", safeGaid);
+            data.put("serverIp", targetServerIp);
+            data.put("adbPort", adbPort);
+            data.put("imagePathUsed", imagePath);
+            data.put("tunnelCommand", tunnelCmd);
+            data.put("adbConnectCommand", adbCmd);
+            data.put("tips", Arrays.asList(
+                    "第一步：先在本机执行端口转发命令",
+                    "第二步：执行 adb connect 命令连接设备"
+            ));
+            result.put("success", true);
+            result.put("message", "恢复成功，请按步骤执行命令连接设备");
+            result.put("data", data);
+            return result;
+        } catch (Exception e) {
+            log.error("查看设备并恢复环境失败: phoneId={}, gaid={}", phoneId, gaid, e);
+            result.put("success", false);
+            result.put("message", "查看设备失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    private String extractMappedPort(String output) {
+        String out = trimToNull(output);
+        if (out == null) return null;
+        // 纯端口输出（如 49393）
+        if (out.matches("^\\d{2,5}$")) {
+            return out;
+        }
+        // 典型输出: 0.0.0.0:49393 或 :::49393
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(":(\\d{2,5})").matcher(out);
+        String port = null;
+        while (m.find()) {
+            port = m.group(1);
+        }
+        return port;
+    }
+
+    private String buildSshErrorMessage(SshUtil.SshResult sshResult) {
+        if (sshResult == null) {
+            return "SSH结果为空";
+        }
+        String msg = trimToNull(sshResult.getErrorMessage());
+        if (msg != null) {
+            return msg;
+        }
+        String errOut = trimToNull(sshResult.getErrorOutput());
+        if (errOut != null) {
+            return "stderr: " + errOut;
+        }
+        String out = trimToNull(sshResult.getOutput());
+        if (out != null) {
+            return "output: " + out;
+        }
+        return "exitCode=" + sshResult.getExitCode();
+    }
+
+    private String applyImageDateTag(String imagePath, String dateTag) {
+        String safeTag = trimToNull(dateTag);
+        if (safeTag == null || safeTag.length() != 8) return imagePath;
+        String path = imagePath == null ? "" : imagePath;
+        // 常见镜像格式包含 androidXX_YYYYMMDD，将日期段替换为固定默认值
+        if (path.matches(".*android\\d+_\\d{8}.*")) {
+            return path.replaceAll("(android\\d+_)\\d{8}", "$1" + safeTag);
+        }
+        return path;
+    }
+
+    /**
+     * 开窗管理列表（分页+筛选）
+     */
+    public Map<String, Object> getWindowManageList(int page, int size,
+                                                   String fanStartDate, String fanEndDate,
+                                                   String nurtureStartDate, String nurtureEndDate,
+                                                   String nurtureStrategy, String shopStatus,
+                                                   String nurtureDevice, String country,
+                                                   String account, String note) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            int safePage = page < 1 ? 1 : page;
+            int safeSize = normalizeAccountPageSize(size);
+            String safeStrategy = trimToNull(nurtureStrategy);
+            String safeDevice = trimToNull(nurtureDevice);
+            String safeCountry = trimToNull(country);
+            String safeAccount = trimToNull(account);
+            String safeNote = trimToNull(note);
+
+            LocalDateTime fanStart = parseDateStart(fanStartDate);
+            LocalDateTime fanEnd = parseDateEnd(fanEndDate);
+            LocalDateTime nurtureStart = parseDateStart(nurtureStartDate);
+            LocalDateTime nurtureEnd = parseDateEnd(nurtureEndDate);
+
+            LambdaQueryWrapper<TtFollowDetailsNew> countWrapper = new LambdaQueryWrapper<>();
+            applyWindowManageFilters(countWrapper, fanStart, fanEnd, nurtureStart, nurtureEnd,
+                    safeStrategy, shopStatus, safeDevice, safeCountry, safeAccount, safeNote);
+
+            LambdaQueryWrapper<TtFollowDetailsNew> dataWrapper = new LambdaQueryWrapper<>();
+            applyWindowManageFilters(dataWrapper, fanStart, fanEnd, nurtureStart, nurtureEnd,
+                    safeStrategy, shopStatus, safeDevice, safeCountry, safeAccount, safeNote);
+            // 只查页面展示列，减少行读取体积
+            dataWrapper.select(
+                    TtFollowDetailsNew::getId,
+                    TtFollowDetailsNew::getPhoneId,
+                    TtFollowDetailsNew::getUsername,
+                    TtFollowDetailsNew::getPassword,
+                    TtFollowDetailsNew::getGaid,
+                    TtFollowDetailsNew::getFanDate,
+                    TtFollowDetailsNew::getNurtureDate,
+                    TtFollowDetailsNew::getShopStatus,
+                    TtFollowDetailsNew::getFollowingType,
+                    TtFollowDetailsNew::getRegisterIpRegion,
+                    TtFollowDetailsNew::getRegisterEnv,
+                    TtFollowDetailsNew::getNote,
+                    TtFollowDetailsNew::getCreatedAt,
+                    TtFollowDetailsNew::getNurtureDevice,
+                    TtFollowDetailsNew::getCountry
+            );
+            dataWrapper.orderByDesc(TtFollowDetailsNew::getCreatedAt);
+            dataWrapper.orderByDesc(TtFollowDetailsNew::getId);
+
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<TtFollowDetailsNew> pageObj =
+                    new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(safePage, safeSize, true);
+            com.baomidou.mybatisplus.core.metadata.IPage<TtFollowDetailsNew> pageResult =
+                    ttFollowDetailsNewRepository.selectPage(pageObj, dataWrapper);
+
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (TtFollowDetailsNew row : pageResult.getRecords()) {
+                rows.add(buildWindowManageRow(row));
+            }
+
+            long total = pageResult.getTotal();
+            boolean totalAccurate = true;
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("list", rows);
+            data.put("total", total);
+            data.put("page", safePage);
+            data.put("size", safeSize);
+            data.put("totalPages", Math.max(1, (total + safeSize - 1) / safeSize));
+            data.put("totalAccurate", totalAccurate);
+            data.put("pageSizeOptions", Arrays.asList(10, 50, 100));
+            result.put("success", true);
+            result.put("data", data);
+            return result;
+        } catch (Exception e) {
+            log.error("查询开窗管理列表异常", e);
+            result.put("success", false);
+            result.put("message", "查询开窗管理列表失败: " + e.getMessage());
+            return result;
+        }
+    }
+
+    private void applyWindowManageFilters(LambdaQueryWrapper<TtFollowDetailsNew> wrapper,
+                                          LocalDateTime fanStart, LocalDateTime fanEnd,
+                                          LocalDateTime nurtureStart, LocalDateTime nurtureEnd,
+                                          String safeStrategy, String shopStatus, String safeDevice,
+                                          String safeCountry, String safeAccount, String safeNote) {
+        if (fanStart != null) {
+            wrapper.ge(TtFollowDetailsNew::getFanDate, fanStart);
+        }
+        if (fanEnd != null) {
+            wrapper.le(TtFollowDetailsNew::getFanDate, fanEnd);
+        }
+        if (nurtureStart != null) {
+            wrapper.ge(TtFollowDetailsNew::getNurtureDate, nurtureStart);
+        }
+        if (nurtureEnd != null) {
+            wrapper.le(TtFollowDetailsNew::getNurtureDate, nurtureEnd);
+        }
+        if (safeAccount != null) {
+            // 用户名按前缀检索，避免 contains 导致全表扫描
+            wrapper.likeRight(TtFollowDetailsNew::getUsername, safeAccount);
+        }
+        if (safeNote != null) {
+            wrapper.like(TtFollowDetailsNew::getNote, safeNote);
+        }
+        if (safeStrategy != null && !"ALL".equalsIgnoreCase(safeStrategy)) {
+            Integer followingType = parseFollowingType(safeStrategy);
+            if (followingType != null) {
+                wrapper.eq(TtFollowDetailsNew::getFollowingType, followingType);
+            } else {
+                // 无法识别的策略值直接返回空结果，避免全表扫描
+                wrapper.eq(TtFollowDetailsNew::getId, -1L);
+            }
+        }
+        if (safeDevice != null && !"ALL".equalsIgnoreCase(safeDevice)) {
+            wrapper.eq(TtFollowDetailsNew::getNurtureDevice, safeDevice);
+        }
+        if (safeCountry != null && !"ALL".equalsIgnoreCase(safeCountry)) {
+            wrapper.eq(TtFollowDetailsNew::getCountry, safeCountry.toUpperCase(Locale.ROOT));
+        }
+        applyWindowShopStatusFilter(wrapper, shopStatus);
+    }
+
+    private String buildWindowManageCountKey(String fanStartDate, String fanEndDate, String nurtureStartDate, String nurtureEndDate,
+                                             String safeStrategy, String shopStatus, String safeDevice, String safeCountry,
+                                             String safeAccount, String safeNote) {
+        return String.join("|",
+                String.valueOf(trimToNull(fanStartDate)),
+                String.valueOf(trimToNull(fanEndDate)),
+                String.valueOf(trimToNull(nurtureStartDate)),
+                String.valueOf(trimToNull(nurtureEndDate)),
+                String.valueOf(safeStrategy),
+                String.valueOf(trimToNull(shopStatus)),
+                String.valueOf(safeDevice),
+                String.valueOf(safeCountry),
+                String.valueOf(safeAccount),
+                String.valueOf(safeNote));
+    }
+
+    private void triggerAsyncWindowManageCount(String key, LambdaQueryWrapper<TtFollowDetailsNew> countWrapper) {
+        if (!windowManageCountComputing.add(key)) return;
+        CompletableFuture.runAsync(() -> {
+            try {
+                long exact = ttFollowDetailsNewRepository.selectCount(countWrapper);
+                windowManageCountCache.put(key, exact);
+            } catch (Exception e) {
+                log.warn("开窗管理异步count失败: key={}", key, e);
+            } finally {
+                windowManageCountComputing.remove(key);
+            }
+        }, scheduledTaskExecutor);
+    }
+
+    private void invalidateManageCountCaches() {
+        accountManageCountCache.clear();
+        accountManageCountComputing.clear();
+        windowManageCountCache.clear();
+        windowManageCountComputing.clear();
+    }
+
+    private void applyWindowShopStatusFilter(LambdaQueryWrapper<TtFollowDetailsNew> wrapper, String shopStatus) {
+        String v = trimToNull(shopStatus);
+        if (v == null || "ALL".equalsIgnoreCase(v) || "全部".equals(v)) {
+            return;
+        }
+        if ("成功".equals(v) || "SUCCESS".equalsIgnoreCase(v)) {
+            wrapper.eq(TtFollowDetailsNew::getShopStatus, 2);
+            return;
+        }
+        if ("失败".equals(v) || "FAILED".equalsIgnoreCase(v)) {
+            wrapper.eq(TtFollowDetailsNew::getShopStatus, 1);
+            return;
+        }
+        if ("等待".equals(v) || "PENDING".equalsIgnoreCase(v)) {
+            wrapper.eq(TtFollowDetailsNew::getShopStatus, 0);
+        }
+    }
+
+    private Map<String, Object> buildWindowManageRow(TtFollowDetailsNew row) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", row.getId());
+        m.put("phoneId", row.getPhoneId());
+        m.put("username", row.getUsername());
+        m.put("password", row.getPassword());
+        m.put("gaid", row.getGaid());
+        LocalDateTime fanDate = row.getFanDate();
+        LocalDateTime nurtureDate = row.getNurtureDate();
+        m.put("fanDate", fanDate != null ? fanDate.toString() : null);
+        m.put("nurtureDate", nurtureDate != null ? nurtureDate.toString() : null);
+        m.put("shopStatus", mapShopStatusText(row.getShopStatus()));
+        m.put("nurtureStrategy", mapNurtureStrategyText(row.getFollowingType()));
+        m.put("registerIp", trimToNull(row.getRegisterIpRegion()));
+        m.put("registerEnv", trimToNull(row.getRegisterEnv()));
+        m.put("note", row.getNote());
+        return m;
+    }
+
+    private String mapShopStatusText(Integer status) {
+        if (status == null) return null;
+        if (status == 2) return "开店成功";
+        if (status == 1) return "有开店标识不能开店";
+        if (status == 0) return "没有开店标识";
+        return null;
+    }
+
+    private String mapNurtureStrategyText(Integer followingType) {
+        if (followingType == null) return null;
+        if (followingType == 1) return "浏览";
+        if (followingType == 2) return "发布+浏览";
+        return null;
+    }
+
+    private Integer parseFollowingType(String strategyText) {
+        String v = trimToNull(strategyText);
+        if (v == null) return null;
+        if ("浏览".equals(v) || "BROWSE".equalsIgnoreCase(v)) return 1;
+        if ("发布+浏览".equals(v) || "PUBLISH_BROWSE".equalsIgnoreCase(v)) return 2;
+        return null;
+    }
+
+    private Map<String, String> resolveIpGeo(String ip) {
+        String key = trimToNull(ip);
+        if (key == null) {
+            return Collections.emptyMap();
+        }
+        return ipGeoCache.computeIfAbsent(key, this::fetchIpGeo);
+    }
+
+    private Map<String, String> fetchIpGeo(String ip) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL("http://ipinfo.io/widget/demo/" + ip);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) {
+                return Collections.emptyMap();
+            }
+            try (InputStream in = conn.getInputStream()) {
+                String body = new String(in.readAllBytes());
+                com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(body);
+                com.fasterxml.jackson.databind.JsonNode data = root.path("data");
+                if (data.isMissingNode() || data.isNull()) {
+                    data = root;
+                }
+                String region = data.path("region").asText("");
+                String city = data.path("city").asText("");
+                String country = data.path("country").asText("");
+                Map<String, String> geo = new HashMap<>();
+                geo.put("region", region);
+                geo.put("city", city);
+                geo.put("country", country);
+                return geo;
+            }
+        } catch (Exception e) {
+            log.debug("IP归属地查询失败, ip={}", ip, e);
+            return Collections.emptyMap();
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
     
     /**
      * 查询任务列表（从数据库）
      */
     public Map<String, Object> getTaskList(String status, String taskType, String serverIp, String phoneId, int page, int size) {
         try {
-            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TtRegisterTask> wrapper = 
+            int safePage = page < 1 ? 1 : page;
+            int safeSize = (size == 10 || size == 50 || size == 100) ? size : 10;
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TtRegisterTask> wrapper =
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
             
             if (status != null && !status.isEmpty()) {
@@ -4504,14 +6195,15 @@ public class TtRegisterService {
             if (phoneId != null && !phoneId.isEmpty()) {
                 wrapper.eq(TtRegisterTask::getPhoneId, phoneId);
             }
-            
             wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
-            
-            // 分页查询
-            com.baomidou.mybatisplus.extension.plugins.pagination.Page<TtRegisterTask> pageObj = 
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size);
-            com.baomidou.mybatisplus.core.metadata.IPage<TtRegisterTask> pageResult = 
-                ttRegisterTaskRepository.selectPage(pageObj, wrapper);
+            wrapper.orderByDesc(TtRegisterTask::getId);
+
+            com.baomidou.mybatisplus.extension.plugins.pagination.Page<TtRegisterTask> pageObj =
+                    new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(safePage, safeSize, true);
+            com.baomidou.mybatisplus.core.metadata.IPage<TtRegisterTask> pageResult =
+                    ttRegisterTaskRepository.selectPage(pageObj, wrapper);
+            long total = pageResult.getTotal();
+            long totalPages = Math.max(1, (total + safeSize - 1) / safeSize);
             
             List<Map<String, Object>> taskList = new ArrayList<>();
             for (TtRegisterTask task : pageResult.getRecords()) {
@@ -4542,11 +6234,11 @@ public class TtRegisterService {
             // 构建分页数据对象
             Map<String, Object> data = new HashMap<>();
             data.put("list", taskList);
-            data.put("total", pageResult.getTotal());
-            data.put("page", page);
-            data.put("size", size);
-            data.put("totalPages", pageResult.getPages());
-            data.put("totalElements", pageResult.getTotal());
+            data.put("total", total);
+            data.put("page", safePage);
+            data.put("size", safeSize);
+            data.put("totalPages", totalPages);
+            data.put("totalElements", total);
             
             result.put("data", data);
             return result;
@@ -4626,6 +6318,11 @@ public class TtRegisterService {
             
             // 先添加到内存停止集合（立即生效）
             stoppedTaskIds.add(taskId);
+
+            // 任务正在运行时，尝试强制终止远端注册脚本进程（避免仅改状态但进程仍在跑）
+            if ("RUNNING".equals(task.getStatus())) {
+                forceStopRemoteRegisterProcess(task);
+            }
             
             // 更新数据库状态
             task.setStatus("STOPPED");
@@ -4646,6 +6343,51 @@ public class TtRegisterService {
             result.put("success", false);
             result.put("message", "停止任务失败: " + e.getMessage());
             return result;
+        }
+    }
+
+    /**
+     * 按任务信息在远端 Appium 主机上强制停止注册脚本进程。
+     * 匹配条件：python3 + 注册脚本名 + phoneId。
+     */
+    private void forceStopRemoteRegisterProcess(TtRegisterTask task) {
+        try {
+            if (task == null || task.getPhoneId() == null || task.getPhoneId().trim().isEmpty()) {
+                return;
+            }
+
+            String phoneId = task.getPhoneId().trim();
+            String scriptHost = task.getAppiumServer();
+            if (scriptHost == null || scriptHost.trim().isEmpty()) {
+                scriptHost = "10.13.55.85"; // 与执行注册脚本时默认值保持一致
+            } else {
+                scriptHost = scriptHost.trim();
+            }
+
+            String killCmd = String.format(
+                "pids=$(ps aux | grep -E 'python3.*(tiktok_register_us_test_account.py|tiktok_register_br_test_account.py)' " +
+                "| grep -F '%s' | grep -v grep | awk '{print $2}'); " +
+                "if [ -n \"$pids\" ]; then kill -9 $pids 2>/dev/null || true; echo \"$pids\"; else echo 'no_process'; fi",
+                phoneId
+            );
+
+            SshUtil.SshResult killResult = sshCommand(scriptHost, killCmd);
+            if (!killResult.isSuccess()) {
+                log.warn("停止任务时远端杀进程命令执行失败，taskId={}, phoneId={}, host={}, error={}",
+                        task.getTaskId(), phoneId, scriptHost, killResult.getErrorMessage());
+                return;
+            }
+
+            String output = killResult.getOutput() == null ? "" : killResult.getOutput().trim();
+            if (output.isEmpty() || "no_process".equals(output)) {
+                log.info("停止任务时未发现存活注册进程，taskId={}, phoneId={}, host={}",
+                        task.getTaskId(), phoneId, scriptHost);
+            } else {
+                log.info("停止任务时已终止注册进程，taskId={}, phoneId={}, host={}, pids={}",
+                        task.getTaskId(), phoneId, scriptHost, output);
+            }
+        } catch (Exception e) {
+            log.warn("停止任务时强制终止远端注册进程异常，taskId={}", task != null ? task.getTaskId() : null, e);
         }
     }
     
