@@ -2712,7 +2712,12 @@ public class TtRegisterService {
             int maxRetries = 1;  // 统一降为3次重试，减少连接数放大
             int retryCount = 0;
             boolean resetSuccess = false;
-            
+
+            // DynamicIPError 渠道降级列表（按优先级）：失败时依次切换，本轮内不写 DB
+            final List<String> ipChannelFallbacks = new java.util.ArrayList<>(java.util.Arrays.asList("lajiao", "netnut_biu", "kookeey"));
+            ipChannelFallbacks.remove(dynamicIpChannel); // 当前渠道已在使用，从候补中移除
+            int ipChannelFallbackIndex = 0;
+
             // 重试逻辑：最多重试5次
             while (retryCount <= maxRetries) {
                 try {
@@ -2842,6 +2847,23 @@ public class TtRegisterService {
                             String message = (String) responseStatus.get("message");
                                 log.warn("{} {} - ResetPhoneEnv返回非0状态码: code={}, message={}, 重试次数: {}/{}",
                                         logPrefix, phoneId, code, message, retryCount, maxRetries);
+
+                                // DynamicIPError：当前渠道不可用，本轮内按优先级切换渠道重试
+                                if (message != null && message.contains("DynamicIPError")) {
+                                    if (ipChannelFallbackIndex < ipChannelFallbacks.size()) {
+                                        String nextChannel = ipChannelFallbacks.get(ipChannelFallbackIndex++);
+                                        log.warn("{} {} - DynamicIPError，渠道 [{}] 不可用，切换到 [{}] 重试",
+                                                logPrefix, phoneId, dynamicIpChannel, nextChannel);
+                                        dynamicIpChannel = nextChannel;
+                                        // retryCount 不递增，渠道切换不消耗重试次数
+                                        continue;
+                                    } else {
+                                        log.error("{} {} - DynamicIPError，所有渠道均不可用（已尝试: lajiao/netnut_biu/kookeey），放弃",
+                                                logPrefix, phoneId);
+                                        return "FAILED: ResetPhoneEnv失败 (DynamicIPError，所有渠道均不可用) - " + message;
+                                    }
+                                }
+
                                 // 代理配置失败（远端已自行重试多次）属于不可重试的确定性失败，直接 fail fast
                                 boolean isNonRetryable = message != null && (
                                         message.contains("failed after") ||
