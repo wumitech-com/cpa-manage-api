@@ -2581,18 +2581,32 @@ public class TtRegisterService {
                     }
                     
                     // 先获取令牌桶许可（速率控制），均匀分散对同一服务器的Reset请求
-                    // 若令牌桶已空则阻塞等待，直到下一个令牌补充（约60/rate 秒）
+                    // 用 tryAcquire(500ms) 轮询替代 acquire()，每次等待前检查任务是否已停止
+                    // RateLimiter.acquire() 不响应 interrupt，轮询是唯一正确方案
                     RateLimiter rateLimiter = getResetPhoneEnvRateLimiter(serverIp);
-                    double waitSeconds = rateLimiter.acquire();
-                    if (waitSeconds > 0.1) {
-                        log.info("{} {} - 令牌桶限流等待 {}s（服务器: {}，速率: {}/min）",
-                                logPrefix, phoneId, String.format("%.1f", waitSeconds), serverIp, resetRatePerMinutePerServer);
+                    {
+                        long rateLimitWaitStart = System.currentTimeMillis();
+                        while (!rateLimiter.tryAcquire(500, TimeUnit.MILLISECONDS)) {
+                            if (isTaskStopped(taskId)) {
+                                return "STOPPED: 任务已停止（令牌桶等待中）";
+                            }
+                        }
+                        double waitSeconds = (System.currentTimeMillis() - rateLimitWaitStart) / 1000.0;
+                        if (waitSeconds > 0.1) {
+                            log.info("{} {} - 令牌桶限流等待 {}s（服务器: {}，速率: {}/min）",
+                                    logPrefix, phoneId, String.format("%.1f", waitSeconds), serverIp, resetRatePerMinutePerServer);
+                        }
                     }
 
                     // 再获取信号量（并发上限），防止超过服务器最大并发能力
+                    // 同样用 tryAcquire(500ms) 轮询，确保停止信号能在 500ms 内被感知
                     Semaphore semaphore = getResetPhoneEnvSemaphore(serverIp);
                     log.debug("{} {} - 等待ResetPhoneEnv调用许可（服务器: {}，当前可用: {}）", logPrefix, phoneId, serverIp, semaphore.availablePermits());
-                    semaphore.acquire();
+                    while (!semaphore.tryAcquire(500, TimeUnit.MILLISECONDS)) {
+                        if (isTaskStopped(taskId)) {
+                            return "STOPPED: 任务已停止（信号量等待中）";
+                        }
+                    }
                     long apiCallStartTime = System.currentTimeMillis();
                     try {
                         int currentConcurrency = maxResetPhoneEnvConcurrencyPerServer - semaphore.availablePermits();
