@@ -719,6 +719,21 @@ public class TtRegisterController {
     }
 
     /**
+     * 立即刷新任务配置缓存，使正在运行的任务下一循环即可读到最新配置。
+     * 直接改库后调此接口可跳过 5 分钟 TTL 立即生效。
+     */
+    @PostMapping("/task/config/refresh/{taskId}")
+    public Map<String, Object> refreshTaskConfig(@PathVariable String taskId) {
+        log.info("手动刷新任务配置缓存，taskId: {}", taskId);
+        ttRegisterService.refreshTaskConfig(taskId);
+        Map<String, Object> res = new HashMap<>();
+        res.put("success", true);
+        res.put("message", "配置缓存已刷新，下一循环生效");
+        res.put("taskId", taskId);
+        return res;
+    }
+
+    /**
      * 恢复任务，将状态改回 PENDING
      */
     @PostMapping("/task/resume/{taskId}")
