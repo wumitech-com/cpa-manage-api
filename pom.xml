@@ -83,6 +83,13 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
         </dependency>
+
+        <!-- Guava（RateLimiter 令牌桶、CacheBuilder 等） -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.1.0-jre</version>
+        </dependency>
         
         <!-- Apache HttpClient (用于RestTemplate连接池) -->
         <dependency>
