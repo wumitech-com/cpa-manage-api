@@ -680,38 +680,21 @@ public class TtRegisterService {
     }
     
     /**
-     * 应用启动时恢复未完成的任务并自动执行
+     * 应用启动时恢复孤儿任务：将所有 RUNNING 重置为 PENDING。
+     * 服务重启意味着所有执行线程已消失，RUNNING 任务均为孤儿，需重新调度。
+     * 只更新 status/updated_at，不覆盖 country/dynamicIpChannel 等配置字段。
      */
     @PostConstruct
     public void recoverTasks() {
         try {
-            List<TtRegisterTask> pendingTasks = ttRegisterTaskRepository.findByStatusIn(
-                Arrays.asList("RUNNING")
-            );
-            
-            if (pendingTasks.isEmpty()) {
-                log.info("没有需要恢复的任务");
-                return;
+            int count = ttRegisterTaskRepository.resetRunningToPending();
+            if (count > 0) {
+                log.warn("服务启动恢复：发现 {} 个孤儿任务（RUNNING），已重置为 PENDING，等待下次定时任务扫描执行", count);
+            } else {
+                log.info("服务启动检查：无孤儿任务");
             }
-            
-            log.info("发现 {} 个未完成的任务，准备恢复并执行", pendingTasks.size());
-            
-            // 将 RUNNING 状态的任务重置为 PENDING（因为应用重启了）
-            for (TtRegisterTask task : pendingTasks) {
-                if ("RUNNING".equals(task.getStatus())) {
-                    task.setStatus("PENDING");
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
-                    log.info("重置任务状态: taskId={}, phoneId={}, 从 RUNNING 改为 PENDING", 
-                            task.getTaskId(), task.getPhoneId());
-                }
-            }
-
-            // 这里不主动触发 scheduledExecutePendingTasks()，
-            // 仅等待下一个 @Scheduled 周期自然拉取，避免启动瞬间重复竞争。
-            log.info("任务恢复完成：已将 RUNNING 重置为 PENDING，等待下次定时任务扫描执行");
         } catch (Exception e) {
-            log.error("恢复任务时出错", e);
+            log.error("恢复孤儿任务时出错", e);
         }
     }
     
@@ -968,11 +951,7 @@ public class TtRegisterService {
                     } else {
                         log.warn("主板机任务 {} - 设备 {} 第 {} 轮注册失败: {}", task.getTaskId(), phoneId, round, result);
                     }
-                    
-                    // 心跳更新
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
-                    
+
                     // 注册完成后，再次检查是否被停止
                     if (isTaskStopped(task.getTaskId())) {
                         log.info("主板机任务 {} - 设备 {} 在注册完成后检测到停止信号，退出循环", task.getTaskId(), phoneId);
@@ -981,7 +960,7 @@ public class TtRegisterService {
                         ttRegisterTaskRepository.updateById(task);
                         break;
                     }
-                    
+
                     round++;
                     Thread.sleep(5000); // 每轮之间休息5秒
                 }
@@ -1030,11 +1009,7 @@ public class TtRegisterService {
                         failCount++;
                         log.warn("主板机任务 {} - 设备 {} 第 {} 个账号注册失败: {}", task.getTaskId(), phoneId, i, result);
                     }
-                    
-                    // 心跳更新
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
-                    
+
                     Thread.sleep(5000); // 每个账号之间休息5秒
                 }
                 
@@ -1117,16 +1092,7 @@ public class TtRegisterService {
                         log.warn("任务 {} - 设备 {} 第 {} 轮注册失败: {}", task.getTaskId(), phoneId, round, result);
                     }
 
-                    // 心跳前先检查是否被手动在库中改为 STOPPED，避免覆盖
-                    if (syncStoppedFromDb(task)) {
-                        log.info("任务 {} - 设备 {} 检测到数据库已 STOPPED，退出", task.getTaskId(), phoneId);
-                        ttRegisterTaskRepository.updateById(task);
-                        break;
-                    }
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
-
-                    // 注册完成后，再次检查是否被停止（避免继续下一轮）
+                    // 注册完成后检查是否被停止（避免继续下一轮）
                     if (isTaskStopped(task.getTaskId())) {
                         log.info("任务 {} - 设备 {} 在注册完成后检测到停止信号，退出循环", task.getTaskId(), phoneId);
                         task.setStatus("STOPPED");
@@ -1187,19 +1153,10 @@ public class TtRegisterService {
                         log.warn("任务 {} - 设备 {} 第 {} 个账号注册失败: {}", task.getTaskId(), phoneId, i, result);
                     }
 
-                    // 心跳前先检查是否被手动在库中改为 STOPPED，避免覆盖
-                    if (syncStoppedFromDb(task)) {
-                        log.info("任务 {} - 设备 {} 检测到数据库已 STOPPED，退出，已完成 {}/{}", task.getTaskId(), phoneId, i, targetCount);
-                        ttRegisterTaskRepository.updateById(task);
-                        break;
-                    }
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
-
                     Thread.sleep(5000); // 每个账号之间休息5秒
                 }
-                
-                // 完成前再检查一次，避免最后一步被手动改为 STOPPED 后仍写成 COMPLETED
+
+                // 完成前检查是否被手动改为 STOPPED，避免覆盖写成 COMPLETED
                 if (syncStoppedFromDb(task)) {
                     ttRegisterTaskRepository.updateById(task);
                     return;
@@ -1283,8 +1240,6 @@ public class TtRegisterService {
                         ttRegisterTaskRepository.updateById(task);
                         return;
                     }
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
                     try {
                         Thread.sleep(60000);
                     } catch (InterruptedException ie) {
@@ -1474,116 +1429,7 @@ public class TtRegisterService {
         }
         return exitCode != null ? exitCode : -1;
     }
-    
-    /**
-     * 定时任务：检查长时间未更新的 RUNNING 任务，重置为 PENDING 以便重新执行
-     * 每5分钟执行一次
-     * 注意：不会重置 STOPPED 状态的任务，即使它们长时间未更新
-     */
-    @Scheduled(fixedRate = 5 * 60 * 1000) // 每5分钟执行一次
-    public void scheduledCheckStuckTasks() {
-        try {
-            // 计算1小时前的时间点
-            LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
-            
-            // 查询超过1小时未更新的 RUNNING 状态任务
-            List<TtRegisterTask> stuckTasks = ttRegisterTaskRepository.findRunningTasksNotUpdatedSince("RUNNING", oneHourAgo);
-            
-            if (stuckTasks.isEmpty()) {
-                log.debug("定时任务检查：没有发现长时间未更新的 RUNNING 任务");
-                return;
-            }
-            
-            log.warn("定时任务检查：发现 {} 个长时间未更新的 RUNNING 任务，将检查并重置为 PENDING", stuckTasks.size());
-            
-            int resetCount = 0;
-            int skippedCount = 0;
-            for (TtRegisterTask task : stuckTasks) {
-                try {
-                    final String stuckTaskId = task.getTaskId();
-                    final String phoneId = task.getPhoneId();
-                    
-                    // 双重检查：再次从数据库查询最新状态，确保任务状态没有被手动修改为 STOPPED
-                    TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
-                    if (currentTask == null) {
-                        log.debug("任务 {} 不存在，跳过", task.getTaskId());
-                        skippedCount++;
-                        continue;
-                    }
-                    
-                    // 如果任务状态不是 RUNNING（可能被手动改为 STOPPED），则跳过
-                    if (!"RUNNING".equals(currentTask.getStatus())) {
-                        log.debug("任务 {} 当前状态为 {}，不是 RUNNING，跳过重置", 
-                                task.getTaskId(), currentTask.getStatus());
-                        skippedCount++;
-                        continue;
-                    }
-                    
-                    // 检查是否在停止集合中（如果用户调用了停止接口，但状态还没更新到数据库）
-                    if (isTaskStopped(task.getTaskId())) {
-                        log.debug("任务 {} 在停止集合中，跳过重置", task.getTaskId());
-                        skippedCount++;
-                        continue;
-                    }
-                    
-                    // 该任务长时间未更新，且当前实现里“重置为 PENDING”不会停止实际执行线程，
-                    // 会导致 deviceLocks 仍被占用，新的调度会反复跳过。
-                    // 因此这里先请求停止（STOPPED + stoppedTaskIds），等待设备锁释放后再切回 PENDING。
-                    markTaskStopped(stuckTaskId);
-                    task.setStatus("STOPPED");
-                    task.setUpdatedAt(LocalDateTime.now());
-                    ttRegisterTaskRepository.updateById(task);
-                    resetCount++;
-                    log.info("任务 {} - 设备 {} 因超过1小时未更新，已切换为 STOPPED 并请求停止，等待设备锁释放后再重试", 
-                            stuckTaskId, phoneId);
 
-                    CompletableFuture.runAsync(() -> {
-                        long start = System.currentTimeMillis();
-                        long timeoutMs = 10 * 60 * 1000; // 最多等待10分钟设备锁释放
-                        while (System.currentTimeMillis() - start < timeoutMs) {
-                            try {
-                                Semaphore sem = deviceLocks.get(phoneId);
-                                // sem.availablePermits() 在“占用时”为0，“空闲时”为1
-                                boolean free = (sem == null) || sem.availablePermits() > 0;
-                                if (free) {
-                                    clearTaskStopped(stuckTaskId);
-                                    TtRegisterTask latest = ttRegisterTaskRepository.findByTaskId(stuckTaskId);
-                                    if (latest != null && !"PENDING".equals(latest.getStatus())) {
-                                        latest.setStatus("PENDING");
-                                        latest.setUpdatedAt(LocalDateTime.now());
-                                        ttRegisterTaskRepository.updateById(latest);
-                                    }
-                                    log.info("任务 {} - 设备 {} 锁已释放，已切回 PENDING 以重试", stuckTaskId, phoneId);
-                                    return;
-                                }
-                            } catch (Exception e) {
-                                log.warn("任务 {} 等待设备锁释放时出错: {}", stuckTaskId, e.getMessage());
-                            }
-                            
-                            try {
-                                Thread.sleep(5000);
-                            } catch (InterruptedException ie) {
-                                Thread.currentThread().interrupt();
-                                return;
-                            }
-                        }
-                        
-                        log.warn("任务 {} - 设备 {} 等待设备锁释放超时（{}ms），保持 STOPPED 状态以避免并发冲突",
-                                stuckTaskId, phoneId, timeoutMs);
-                    }, parallelRegisterExecutor);
-                } catch (Exception e) {
-                    log.error("重置任务状态失败: taskId={}", task.getTaskId(), e);
-                }
-            }
-            
-            log.info("定时任务检查：成功重置 {} 个长时间未更新的任务为 PENDING，跳过 {} 个任务（状态已变更或已停止）", 
-                    resetCount, skippedCount);
-            
-        } catch (Exception e) {
-            log.error("定时任务检查长时间未更新的任务时出错", e);
-        }
-    }
-    
     /**
      * 任务信息
      */

@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Select;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 
 /**
  * 注册任务Repository
@@ -98,6 +99,19 @@ public interface TtRegisterTaskRepository extends BaseMapper<TtRegisterTask> {
         wrapper.lt(TtRegisterTask::getUpdatedAt, beforeTime);
         wrapper.orderByAsc(TtRegisterTask::getUpdatedAt);
         return selectList(wrapper);
+    }
+
+    /**
+     * 服务启动时将所有 RUNNING 任务重置为 PENDING（孤儿任务恢复）。
+     * 只更新 status 和 updated_at，不覆盖其他配置字段。
+     * @return 重置的任务数量
+     */
+    default int resetRunningToPending() {
+        LambdaUpdateWrapper<TtRegisterTask> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(TtRegisterTask::getStatus, "RUNNING")
+               .set(TtRegisterTask::getStatus, "PENDING")
+               .set(TtRegisterTask::getUpdatedAt, LocalDateTime.now());
+        return update(null, wrapper);
     }
     
     /**
