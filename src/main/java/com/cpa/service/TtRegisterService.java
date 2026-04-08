@@ -15,6 +15,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.LoadingCache;
+import com.google.common.cache.CacheLoader;
+import com.google.common.util.concurrent.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -74,9 +77,33 @@ public class TtRegisterService {
     
     // @Value("${MAINBOARD_APPIUM_SERVER:10.7.124.25}")
     // private String mainboardAppiumServer;
-    
-    // 任务信息存储（taskId -> TaskInfo）
-    private final Map<String, TaskInfo> taskInfoMap = new ConcurrentHashMap<>();
+
+    /**
+     * 任务执行信息缓存（taskId -> TaskInfo）。
+     * 使用 Guava Cache 替代原始 ConcurrentHashMap：
+     *  - maximumSize(5000)：防止历史任务无限堆积
+     *  - expireAfterWrite(24h)：任务完成后次日自动清理，查询接口仍可读到当天结果
+     * 注意：get 用 getIfPresent（不自动加载），values 用 asMap().values()
+     */
+    private final com.google.common.cache.Cache<String, TaskInfo> taskInfoMap =
+            CacheBuilder.newBuilder()
+                    .maximumSize(5000)
+                    .expireAfterWrite(24, TimeUnit.HOURS)
+                    .build();
+
+    /**
+     * 任务配置缓存（taskId -> TtRegisterTask），TTL 5分钟自动回源 DB。
+     * 直接改库后最多 5 分钟生效；调用 updateTaskConfig 或 refreshTaskConfig 可立即失效。
+     */
+    private final LoadingCache<String, Optional<TtRegisterTask>> taskConfigCache =
+            CacheBuilder.newBuilder()
+                    .expireAfterWrite(5, TimeUnit.MINUTES)
+                    .build(new CacheLoader<String, Optional<TtRegisterTask>>() {
+                        @Override
+                        public Optional<TtRegisterTask> load(String taskId) {
+                            return Optional.ofNullable(ttRegisterTaskRepository.findByTaskId(taskId));
+                        }
+                    });
     
     // 多线程池配置：分离不同类型的任务
     // 1. 并行注册线程池（用于多设备并行注册）
@@ -110,11 +137,18 @@ public class TtRegisterService {
      */
     private static final int SCHEDULED_PENDING_STAGGER_STEP_MS = 2000;
 
-    // 4. ResetPhoneEnv接口调用并发控制信号量（按服务器分组，不同服务器可以并行）
-    // 限制每个服务器同时调用ResetPhoneEnv的数量，避免服务器压力过大
-    private static final int MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER = 20; // 每个服务器最多同时20个ResetPhoneEnv调用
-    // 为每个服务器创建独立的信号量，不同服务器的调用可以并行
-    private static final ConcurrentHashMap<String, Semaphore> resetPhoneEnvSemaphores = new ConcurrentHashMap<>();
+    // 4. ResetPhoneEnv接口调用并发控制（按服务器分组，不同服务器可以并行）
+    // 每个服务器同时调用ResetPhoneEnv的最大并发数：ResetPhoneEnv耗时3~5分钟，15台机器，5并发是安全上限
+    @Value("${tt-register.reset-concurrency-per-server:5}")
+    private int maxResetPhoneEnvConcurrencyPerServer;
+    // 每个服务器每分钟最多发起的ResetPhoneEnv次数（令牌桶速率），防止Docker被突发操作压垮
+    // 默认4：对应每台服务器平均每15秒一个Reset，与耗时3~5分钟+5并发上限匹配
+    @Value("${tt-register.reset-rate-per-minute-per-server:4.0}")
+    private double resetRatePerMinutePerServer;
+    // 为每个服务器创建独立的信号量（并发上限），不同服务器的调用可以并行
+    private final ConcurrentHashMap<String, Semaphore> resetPhoneEnvSemaphores = new ConcurrentHashMap<>();
+    // 为每个服务器创建独立的令牌桶（速率控制），均匀分散Reset请求，避免突发冲击Docker
+    private final ConcurrentHashMap<String, RateLimiter> resetPhoneEnvRateLimiters = new ConcurrentHashMap<>();
     
     // 5. Appium服务器端口池（用于随机选择，避免单点瓶颈）
     // 根据实际运行的Appium服务器端口范围定义（4723-4781）
@@ -136,11 +170,69 @@ public class TtRegisterService {
         return appiumServer;
     }
     
-    // 5. 已停止的任务ID集合（内存中快速检查，避免数据库查询延迟）
-    private static final Set<String> stoppedTaskIds = ConcurrentHashMap.newKeySet();
-    
-    // 6. 设备执行锁（按设备ID，防止同一设备被多个任务同时操作）
+    /**
+     * 已停止的任务ID集合（内存中快速检查，避免数据库查询延迟）。
+     * 使用 Guava Cache 替代原始 Set：
+     *  - TTL 2小时：任务停止后即使忘记 remove，也不会无限积累
+     *  - value 固定为 Boolean.TRUE，仅用 key 做存在性判断
+     *  - 操作统一走 markTaskStopped/isTaskStopped/clearTaskStopped，避免散落的 add/remove/contains
+     */
+    private static final com.google.common.cache.Cache<String, Boolean> stoppedTaskCache =
+            CacheBuilder.newBuilder()
+                    .expireAfterWrite(2, TimeUnit.HOURS)
+                    .build();
+
+    private static void markTaskStopped(String taskId) {
+        stoppedTaskCache.put(taskId, Boolean.TRUE);
+    }
+
+    private static boolean isTaskStopped(String taskId) {
+        return stoppedTaskCache.getIfPresent(taskId) != null;
+    }
+
+    private static void clearTaskStopped(String taskId) {
+        stoppedTaskCache.invalidate(taskId);
+    }
+
+    /**
+     * 设备执行锁（按设备ID，防止同一设备被多个任务同时操作）。
+     * 保持 ConcurrentHashMap 而非 TTL Cache：若 TTL 到期时 Semaphore 仍被持有，
+     * 新线程会拿到新对象，旧线程 release 的是旧对象，锁即失效。
+     * 清理工作由 scheduledCleanIdleDeviceLocks() 定时完成。
+     */
     private static final ConcurrentHashMap<String, Semaphore> deviceLocks = new ConcurrentHashMap<>();
+    /** 记录每把锁最后一次 acquire/release 的时间戳（ms），用于判断是否空闲超时 */
+    private static final ConcurrentHashMap<String, Long> deviceLockLastUsed = new ConcurrentHashMap<>();
+
+    /**
+     * 定时清理空闲设备锁：每 30 分钟扫一次，移除已空闲（permits==1）且 30 分钟未使用的条目，
+     * 防止设备下线后 Semaphore 永久占用内存。
+     */
+    @Scheduled(fixedDelay = 30 * 60 * 1000)
+    public void scheduledCleanIdleDeviceLocks() {
+        long now = System.currentTimeMillis();
+        long idleThresholdMs = 30 * 60 * 1000L; // 30 分钟
+        int removed = 0;
+        for (Map.Entry<String, Semaphore> entry : deviceLocks.entrySet()) {
+            String phoneId = entry.getKey();
+            Semaphore sem = entry.getValue();
+            Long lastUsed = deviceLockLastUsed.get(phoneId);
+            boolean idle = sem.availablePermits() == 1
+                    && (lastUsed == null || now - lastUsed > idleThresholdMs);
+            if (idle) {
+                // 再次确认：tryAcquire 成功说明确实空闲，立即 release 并移除
+                if (sem.tryAcquire()) {
+                    sem.release();
+                    deviceLocks.remove(phoneId, sem); // 用 remove(key, value) 避免移除别的线程刚放入的新对象
+                    deviceLockLastUsed.remove(phoneId);
+                    removed++;
+                }
+            }
+        }
+        if (removed > 0) {
+            log.info("清理空闲设备锁完成，移除 {} 个", removed);
+        }
+    }
 
     /**
      * 本机留存去重缓存：同一账号在 24 小时内只会被本 JVM 处理一次留存
@@ -159,6 +251,42 @@ public class TtRegisterService {
     private final Set<String> windowManageCountComputing = ConcurrentHashMap.newKeySet();
 
     /**
+     * 从缓存获取最新任务配置并构建 resetParams。
+     * Cache TTL 5分钟自动回源；updateTaskConfig/refreshTaskConfig 会主动 invalidate 缓存，可立即生效。
+     * 若缓存获取失败，回退到传入的 fallbackParams。
+     */
+    private Map<String, String> getLatestResetParams(String taskId, Map<String, String> fallbackParams) {
+        try {
+            Optional<TtRegisterTask> opt = taskConfigCache.get(taskId);
+            if (!opt.isPresent()) {
+                return fallbackParams;
+            }
+            TtRegisterTask latest = opt.get();
+            Map<String, String> params = new HashMap<>();
+            if (latest.getCountry() != null) params.put("country", latest.getCountry());
+            if (latest.getSdk() != null) params.put("sdk", latest.getSdk());
+            if (latest.getImagePath() != null) params.put("imagePath", latest.getImagePath());
+            if (latest.getGaidTag() != null) params.put("gaidTag", latest.getGaidTag());
+            if (latest.getDynamicIpChannel() != null) params.put("dynamicIpChannel", latest.getDynamicIpChannel());
+            if (latest.getStaticIpChannel() != null) params.put("staticIpChannel", latest.getStaticIpChannel());
+            if (latest.getBiz() != null) params.put("biz", latest.getBiz());
+            if (latest.getAppiumServer() != null) params.put("appiumServer", latest.getAppiumServer());
+            return params;
+        } catch (Exception e) {
+            log.warn("任务 {} 读取配置缓存失败，使用原始参数: {}", taskId, e.getMessage());
+            return fallbackParams;
+        }
+    }
+
+    /**
+     * 手动刷新任务配置缓存，使下一次循环立即从 DB 读取最新配置。
+     */
+    public void refreshTaskConfig(String taskId) {
+        taskConfigCache.invalidate(taskId);
+        log.info("任务 {} 配置缓存已手动刷新", taskId);
+    }
+
+    /**
      * 若数据库中任务已被置为 STOPPED（如手动改库），则同步到内存并返回 true，调用方应停止执行。
      * 返回 true 时已设置 task.setStatus("STOPPED") 并加入 stoppedTaskIds，调用方应 updateById(task) 后退出。
      */
@@ -167,7 +295,7 @@ public class TtRegisterService {
         if (db != null && "STOPPED".equals(db.getStatus())) {
             task.setStatus("STOPPED");
             task.setUpdatedAt(LocalDateTime.now());
-            stoppedTaskIds.add(task.getTaskId());
+            markTaskStopped(task.getTaskId());
             return true;
         }
         return false;
@@ -192,13 +320,24 @@ public class TtRegisterService {
     }
     
     /**
-     * 获取指定服务器的ResetPhoneEnv调用信号量
+     * 获取指定服务器的ResetPhoneEnv调用信号量（并发上限）
      * @param serverIp 服务器IP
      * @return 信号量
      */
-    private static Semaphore getResetPhoneEnvSemaphore(String serverIp) {
-        return resetPhoneEnvSemaphores.computeIfAbsent(serverIp, 
-            k -> new Semaphore(MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER, true));
+    private Semaphore getResetPhoneEnvSemaphore(String serverIp) {
+        return resetPhoneEnvSemaphores.computeIfAbsent(serverIp,
+            k -> new Semaphore(maxResetPhoneEnvConcurrencyPerServer, true));
+    }
+
+    /**
+     * 获取指定服务器的ResetPhoneEnv令牌桶（速率控制）
+     * 每分钟最多发出 resetRatePerMinutePerServer 个令牌，均匀分散Reset请求，避免Docker被突发冲击。
+     * @param serverIp 服务器IP
+     * @return RateLimiter
+     */
+    private RateLimiter getResetPhoneEnvRateLimiter(String serverIp) {
+        return resetPhoneEnvRateLimiters.computeIfAbsent(serverIp,
+            k -> RateLimiter.create(resetRatePerMinutePerServer / 60.0));
     }
     
     /**
@@ -246,7 +385,7 @@ public class TtRegisterService {
                 }
                 
                 // 检查是否在停止集合中（如果用户调用了停止接口，但状态还没更新到数据库）
-                if (stoppedTaskIds.contains(task.getTaskId())) {
+                if (isTaskStopped(task.getTaskId())) {
                     log.debug("任务 {} 在停止集合中，跳过执行", task.getTaskId());
                     // 同步更新数据库状态
                     currentTask.setStatus("STOPPED");
@@ -262,11 +401,13 @@ public class TtRegisterService {
                     log.warn("设备 {} 正在被其他任务使用，跳过任务 {} (taskId={})", phoneId, task.getTaskId(), task.getTaskId());
                     continue;
                 }
-                
+                deviceLockLastUsed.put(phoneId, System.currentTimeMillis());
+
                 // 尝试获取信号量
                 if (!semaphore.tryAcquire()) {
                     log.debug("并发数已达上限，等待执行任务: taskId={}", task.getTaskId());
                     deviceLock.release(); // 释放设备锁
+                    deviceLockLastUsed.put(phoneId, System.currentTimeMillis());
                     continue;
                 }
                 
@@ -277,6 +418,7 @@ public class TtRegisterService {
                 
                 final TtRegisterTask finalTask = task;
                 final Semaphore finalDeviceLock = deviceLock; // 保存设备锁引用
+                final String finalPhoneId = phoneId;          // 用于 release 时更新时间戳
                 final int staggerSlot = pendingBatchSlot.getAndIncrement();
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
@@ -327,6 +469,7 @@ public class TtRegisterService {
                     } finally {
                         // 释放设备锁
                         finalDeviceLock.release();
+                        deviceLockLastUsed.put(finalPhoneId, System.currentTimeMillis());
                         // 释放任务并发信号量
                         semaphore.release();
                     }
@@ -387,7 +530,7 @@ public class TtRegisterService {
                 }
                 
                 // 检查是否在停止集合中
-                if (stoppedTaskIds.contains(task.getTaskId())) {
+                if (isTaskStopped(task.getTaskId())) {
                     log.debug("主板机任务 {} 在停止集合中，跳过执行", task.getTaskId());
                     currentTask.setStatus("STOPPED");
                     currentTask.setUpdatedAt(LocalDateTime.now());
@@ -402,21 +545,24 @@ public class TtRegisterService {
                     log.warn("主板机设备 {} 正在被其他任务使用，跳过任务 {} (taskId={})", phoneId, task.getTaskId(), task.getTaskId());
                     continue;
                 }
-                
+                deviceLockLastUsed.put(phoneId, System.currentTimeMillis());
+
                 // 尝试获取信号量
                 if (!semaphore.tryAcquire()) {
                     log.debug("并发数已达上限，等待执行主板机任务: taskId={}", task.getTaskId());
                     deviceLock.release(); // 释放设备锁
+                    deviceLockLastUsed.put(phoneId, System.currentTimeMillis());
                     continue;
                 }
-                
+
                 // 更新任务状态为 RUNNING
                 task.setStatus("RUNNING");
                 task.setUpdatedAt(LocalDateTime.now());
                 ttRegisterTaskRepository.updateById(task);
-                
+
                 final TtRegisterTask finalTask = task;
                 final Semaphore finalDeviceLock = deviceLock;
+                final String finalPhoneId = phoneId;
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
                         log.info("开始执行主板机养号任务: taskId={}, taskType={}, phoneId={}, targetCount={}", 
@@ -445,6 +591,7 @@ public class TtRegisterService {
                     } finally {
                         // 释放设备锁
                         finalDeviceLock.release();
+                        deviceLockLastUsed.put(finalPhoneId, System.currentTimeMillis());
                         // 释放任务并发信号量
                         semaphore.release();
                     }
@@ -486,7 +633,7 @@ public class TtRegisterService {
             for (TtRegisterTask task : pendingTasks) {
                 TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
                 if (currentTask == null || !"PENDING".equals(currentTask.getStatus())) continue;
-                if (stoppedTaskIds.contains(task.getTaskId())) {
+                if (isTaskStopped(task.getTaskId())) {
                     currentTask.setStatus("STOPPED");
                     currentTask.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(currentTask);
@@ -495,8 +642,10 @@ public class TtRegisterService {
                 String phoneId = task.getPhoneId();
                 Semaphore deviceLock = deviceLocks.computeIfAbsent(phoneId, k -> new Semaphore(1, true));
                 if (!deviceLock.tryAcquire()) continue;
+                deviceLockLastUsed.put(phoneId, System.currentTimeMillis());
                 if (!semaphore.tryAcquire()) {
                     deviceLock.release();
+                    deviceLockLastUsed.put(phoneId, System.currentTimeMillis());
                     continue;
                 }
                 task.setStatus("RUNNING");
@@ -504,6 +653,7 @@ public class TtRegisterService {
                 ttRegisterTaskRepository.updateById(task);
                 final TtRegisterTask finalTask = task;
                 final Semaphore finalDeviceLock = deviceLock;
+                final String finalPhoneId = phoneId;
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
                         log.info("开始执行留存任务: taskId={}, phoneId={}", finalTask.getTaskId(), finalTask.getPhoneId());
@@ -515,6 +665,7 @@ public class TtRegisterService {
                         ttRegisterTaskRepository.updateById(finalTask);
                     } finally {
                         finalDeviceLock.release();
+                        deviceLockLastUsed.put(finalPhoneId, System.currentTimeMillis());
                         semaphore.release();
                     }
                 }, parallelRegisterExecutor);
@@ -782,7 +933,7 @@ public class TtRegisterService {
                 int round = 1;
                 while (true) {
                     // 检查任务是否被停止
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.info("主板机任务 {} - 设备 {} 已被停止（内存检查）", task.getTaskId(), phoneId);
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
@@ -794,7 +945,7 @@ public class TtRegisterService {
                     TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
                     if (currentTask == null || "STOPPED".equals(currentTask.getStatus())) {
                         log.info("主板机任务 {} - 设备 {} 已被停止（数据库检查）", task.getTaskId(), phoneId);
-                        stoppedTaskIds.add(task.getTaskId());
+                        markTaskStopped(task.getTaskId());
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
@@ -823,7 +974,7 @@ public class TtRegisterService {
                     ttRegisterTaskRepository.updateById(task);
                     
                     // 注册完成后，再次检查是否被停止
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.info("主板机任务 {} - 设备 {} 在注册完成后检测到停止信号，退出循环", task.getTaskId(), phoneId);
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
@@ -842,7 +993,7 @@ public class TtRegisterService {
                 
                 for (int i = 1; i <= targetCount; i++) {
                     // 检查任务是否被停止
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.info("主板机任务 {} - 设备 {} 已被停止（内存检查），已完成 {}/{}", task.getTaskId(), phoneId, i - 1, targetCount);
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
@@ -854,7 +1005,7 @@ public class TtRegisterService {
                     TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
                     if (currentTask == null || "STOPPED".equals(currentTask.getStatus())) {
                         log.info("主板机任务 {} - 设备 {} 已被停止（数据库检查），已完成 {}/{}", task.getTaskId(), phoneId, i - 1, targetCount);
-                        stoppedTaskIds.add(task.getTaskId());
+                        markTaskStopped(task.getTaskId());
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
@@ -919,7 +1070,7 @@ public class TtRegisterService {
         String serverIp = task.getServerIp();
         int targetCount = task.getTargetCount() != null ? task.getTargetCount() : 1;
         String tiktokVersionDir = task.getTiktokVersionDir();
-        
+
         try {
             if (targetCount == 0) {
                 // 无限循环注册
@@ -927,42 +1078,45 @@ public class TtRegisterService {
                 int round = 1;
                 while (true) {
                     // 检查任务是否被停止（先检查内存集合，快速响应）
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.info("任务 {} - 设备 {} 已被停止（内存检查）", task.getTaskId(), phoneId);
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
                         break;
                     }
-                    
+
                     // 检查数据库状态（双重检查）
                     TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
                     if (currentTask == null || "STOPPED".equals(currentTask.getStatus())) {
                         log.info("任务 {} - 设备 {} 已被停止（数据库检查）", task.getTaskId(), phoneId);
-                        stoppedTaskIds.add(task.getTaskId()); // 同步到内存集合
+                        markTaskStopped(task.getTaskId()); // 同步到内存集合
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
                         break;
                     }
-                    
+
+                    // 每轮从缓存读取最新配置，支持热更新（TTL 5分钟，updateTaskConfig/refreshTaskConfig 可立即失效）
+                    Map<String, String> currentResetParams = getLatestResetParams(task.getTaskId(), resetParams);
+
                     log.info("任务 {} - 设备 {} 第 {} 轮注册", task.getTaskId(), phoneId, round);
-                    
+
                     // 调用注册流程（包含 ResetPhoneEnv + 安装APK + 执行注册脚本）
                     String result;
                     try {
-                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, round, 0, tiktokVersionDir, resetParams, emailMode);
+                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, round, 0, tiktokVersionDir, currentResetParams, emailMode);
                     } catch (Exception e) {
                         log.error("任务 {} - 设备 {} 第 {} 轮注册时发生未捕获异常", task.getTaskId(), phoneId, round, e);
                         result = "FAILED: 注册流程异常 - " + e.getMessage();
                     }
-                    
+
                     if (result != null && result.startsWith("SUCCESS")) {
                         log.info("任务 {} - 设备 {} 第 {} 轮注册成功", task.getTaskId(), phoneId, round);
                     } else {
                         log.warn("任务 {} - 设备 {} 第 {} 轮注册失败: {}", task.getTaskId(), phoneId, round, result);
                     }
-                    
+
                     // 心跳前先检查是否被手动在库中改为 STOPPED，避免覆盖
                     if (syncStoppedFromDb(task)) {
                         log.info("任务 {} - 设备 {} 检测到数据库已 STOPPED，退出", task.getTaskId(), phoneId);
@@ -971,16 +1125,16 @@ public class TtRegisterService {
                     }
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
-                    
+
                     // 注册完成后，再次检查是否被停止（避免继续下一轮）
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.info("任务 {} - 设备 {} 在注册完成后检测到停止信号，退出循环", task.getTaskId(), phoneId);
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
                         break;
                     }
-                    
+
                     round++;
                     Thread.sleep(5000); // 每轮之间休息5秒
                 }
@@ -989,39 +1143,42 @@ public class TtRegisterService {
                 log.info("任务 {} - 设备 {} 开始注册 {} 个账号", task.getTaskId(), phoneId, targetCount);
                 int successCount = 0;
                 int failCount = 0;
-                
+
                 for (int i = 1; i <= targetCount; i++) {
                     // 检查任务是否被停止（先检查内存集合，快速响应）
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.info("任务 {} - 设备 {} 已被停止（内存检查），已完成 {}/{}", task.getTaskId(), phoneId, i - 1, targetCount);
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
                         break;
                     }
-                    
+
                     // 检查数据库状态（双重检查）
                     TtRegisterTask currentTask = ttRegisterTaskRepository.selectById(task.getId());
                     if (currentTask == null || "STOPPED".equals(currentTask.getStatus())) {
                         log.info("任务 {} - 设备 {} 已被停止（数据库检查），已完成 {}/{}", task.getTaskId(), phoneId, i - 1, targetCount);
-                        stoppedTaskIds.add(task.getTaskId()); // 同步到内存集合
+                        markTaskStopped(task.getTaskId()); // 同步到内存集合
                         task.setStatus("STOPPED");
                         task.setUpdatedAt(LocalDateTime.now());
                         ttRegisterTaskRepository.updateById(task);
                         break;
                     }
-                    
+
+                    // 每轮从缓存读取最新配置，支持热更新（TTL 5分钟，updateTaskConfig/refreshTaskConfig 可立即失效）
+                    Map<String, String> currentResetParams = getLatestResetParams(task.getTaskId(), resetParams);
+
                     log.info("任务 {} - 设备 {} 注册进度: {}/{}", task.getTaskId(), phoneId, i, targetCount);
-                    
+
                     // 调用注册流程（包含 ResetPhoneEnv + 安装APK + 执行注册脚本）
                     String result;
                     try {
-                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, i, targetCount, tiktokVersionDir, resetParams, emailMode);
+                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, i, targetCount, tiktokVersionDir, currentResetParams, emailMode);
                     } catch (Exception e) {
                         log.error("任务 {} - 设备 {} 第 {} 个账号注册时发生未捕获异常", task.getTaskId(), phoneId, i, e);
                         result = "FAILED: 注册流程异常 - " + e.getMessage();
                     }
-                    
+
                     if (result != null && result.startsWith("SUCCESS")) {
                         successCount++;
                         log.info("任务 {} - 设备 {} 第 {} 个账号注册成功", task.getTaskId(), phoneId, i);
@@ -1029,7 +1186,7 @@ public class TtRegisterService {
                         failCount++;
                         log.warn("任务 {} - 设备 {} 第 {} 个账号注册失败: {}", task.getTaskId(), phoneId, i, result);
                     }
-                    
+
                     // 心跳前先检查是否被手动在库中改为 STOPPED，避免覆盖
                     if (syncStoppedFromDb(task)) {
                         log.info("任务 {} - 设备 {} 检测到数据库已 STOPPED，退出，已完成 {}/{}", task.getTaskId(), phoneId, i, targetCount);
@@ -1038,7 +1195,7 @@ public class TtRegisterService {
                     }
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
-                    
+
                     Thread.sleep(5000); // 每个账号之间休息5秒
                 }
                 
@@ -1103,7 +1260,7 @@ public class TtRegisterService {
         int totalFail = 0;
 
         while (true) {
-            if (stoppedTaskIds.contains(task.getTaskId())) {
+            if (isTaskStopped(task.getTaskId())) {
                 task.setStatus("STOPPED");
                 task.setUpdatedAt(LocalDateTime.now());
                 ttRegisterTaskRepository.updateById(task);
@@ -1150,7 +1307,7 @@ public class TtRegisterService {
             int batchSuccess = 0;
             int batchFail = 0;
             for (int i = 0; i < accounts.size(); i++) {
-                if (stoppedTaskIds.contains(task.getTaskId())) {
+                if (isTaskStopped(task.getTaskId())) {
                     task.setStatus("STOPPED");
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
@@ -1363,7 +1520,7 @@ public class TtRegisterService {
                     }
                     
                     // 检查是否在停止集合中（如果用户调用了停止接口，但状态还没更新到数据库）
-                    if (stoppedTaskIds.contains(task.getTaskId())) {
+                    if (isTaskStopped(task.getTaskId())) {
                         log.debug("任务 {} 在停止集合中，跳过重置", task.getTaskId());
                         skippedCount++;
                         continue;
@@ -1372,7 +1529,7 @@ public class TtRegisterService {
                     // 该任务长时间未更新，且当前实现里“重置为 PENDING”不会停止实际执行线程，
                     // 会导致 deviceLocks 仍被占用，新的调度会反复跳过。
                     // 因此这里先请求停止（STOPPED + stoppedTaskIds），等待设备锁释放后再切回 PENDING。
-                    stoppedTaskIds.add(stuckTaskId);
+                    markTaskStopped(stuckTaskId);
                     task.setStatus("STOPPED");
                     task.setUpdatedAt(LocalDateTime.now());
                     ttRegisterTaskRepository.updateById(task);
@@ -1389,7 +1546,7 @@ public class TtRegisterService {
                                 // sem.availablePermits() 在“占用时”为0，“空闲时”为1
                                 boolean free = (sem == null) || sem.availablePermits() > 0;
                                 if (free) {
-                                    stoppedTaskIds.remove(stuckTaskId);
+                                    clearTaskStopped(stuckTaskId);
                                     TtRegisterTask latest = ttRegisterTaskRepository.findByTaskId(stuckTaskId);
                                     if (latest != null && !"PENDING".equals(latest.getStatus())) {
                                         latest.setStatus("PENDING");
@@ -1724,7 +1881,7 @@ public class TtRegisterService {
      */
     @Async
     public void executeParallelRegisterAsync(List<String> phoneIds, String serverIp, int maxConcurrency, int targetCountPerDevice, String taskId, String logFile, String tiktokVersionDir, Map<String, String> resetParams) {
-        TaskInfo taskInfo = taskInfoMap.get(taskId);
+        TaskInfo taskInfo = taskInfoMap.getIfPresent(taskId);
         if (taskInfo == null) {
             log.error("任务信息不存在: {}", taskId);
             return;
@@ -1911,7 +2068,7 @@ public class TtRegisterService {
      */
     @Async
     public void executeParallelOutlookRegisterAsync(List<String> phoneIds, String serverIp, int maxConcurrency, int targetCountPerDevice, String taskId, String logFile, String tiktokVersionDir, Map<String, String> resetParams) {
-        TaskInfo taskInfo = taskInfoMap.get(taskId);
+        TaskInfo taskInfo = taskInfoMap.getIfPresent(taskId);
         if (taskInfo == null) {
             log.error("任务信息不存在: {}", taskId);
             return;
@@ -2064,7 +2221,7 @@ public class TtRegisterService {
      */
     @Async
     public void executeBatchRegisterAsync(List<String> phoneIds, String serverIp, String taskId, String logFile, Map<String, String> resetParams) {
-        TaskInfo taskInfo = taskInfoMap.get(taskId);
+        TaskInfo taskInfo = taskInfoMap.getIfPresent(taskId);
         if (taskInfo == null) {
             log.error("任务信息不存在: {}", taskId);
             return;
@@ -2142,7 +2299,7 @@ public class TtRegisterService {
      * @return 停止结果
      */
     public Map<String, Object> stopTask(String taskId) {
-        TaskInfo taskInfo = taskInfoMap.get(taskId);
+        TaskInfo taskInfo = taskInfoMap.getIfPresent(taskId);
 
         // 1) 内存中有正在执行的任务：先标记停止，便于当前线程立刻退出
         if (taskInfo != null) {
@@ -2182,7 +2339,7 @@ public class TtRegisterService {
      * 查询任务状态
      */
     public Map<String, Object> getTaskStatus(String taskId) {
-        TaskInfo taskInfo = taskInfoMap.get(taskId);
+        TaskInfo taskInfo = taskInfoMap.getIfPresent(taskId);
         
         if (taskInfo == null) {
             Map<String, Object> result = new HashMap<>();
@@ -2233,7 +2390,7 @@ public class TtRegisterService {
      * 这里返回提示信息，建议通过应用日志查看
      */
     public Map<String, Object> getTaskLog(String taskId, int lines) {
-        TaskInfo taskInfo = taskInfoMap.get(taskId);
+        TaskInfo taskInfo = taskInfoMap.getIfPresent(taskId);
         
         if (taskInfo == null) {
             Map<String, Object> result = new HashMap<>();
@@ -2290,7 +2447,7 @@ public class TtRegisterService {
         }
 
         // 2) 再把当前内存中运行的任务信息覆盖进去（保证状态实时）
-        for (TaskInfo taskInfo : taskInfoMap.values()) {
+        for (TaskInfo taskInfo : taskInfoMap.asMap().values()) {
             Map<String, Object> override = new HashMap<>();
             override.put("taskId", taskInfo.getTaskId());
             override.put("status", taskInfo.getStatus());
@@ -2371,6 +2528,9 @@ public class TtRegisterService {
         task.setUpdatedAt(LocalDateTime.now());
         ttRegisterTaskRepository.updateById(task);
 
+        // 立即失效缓存，使正在运行的任务下一循环即可读到新配置
+        taskConfigCache.invalidate(taskId);
+
         Map<String, Object> res = new HashMap<>();
         res.put("success", true);
         res.put("message", "任务配置已更新");
@@ -2408,7 +2568,7 @@ public class TtRegisterService {
         ttRegisterTaskRepository.updateById(task);
 
         // 清理停止集合标记，避免再次被调度线程识别为“在停止集合中，跳过执行”
-        stoppedTaskIds.remove(taskId);
+        clearTaskStopped(taskId);
         log.info("任务 {} 已恢复为 PENDING，已从停止集合中移除", taskId);
 
         Map<String, Object> res = new HashMap<>();
@@ -2517,10 +2677,20 @@ public class TtRegisterService {
                 gaidTag = extractGaidTagFromPhoneId(phoneId);
             }
             
-            // 动态/静态 IP 渠道固定写死为后端约定值，忽略前端传入及随机逻辑
-            String dynamicIpChannel = "netnut_biu";
-            String staticIpChannel = "ipidea";
-            log.info("{} {} - 使用固定IP渠道: dynamicIpChannel={}, staticIpChannel={}", 
+            // 任务表有配置则优先使用任务表配置；为空时回退到后端固定默认值
+            String dynamicIpChannel = resetParams.getOrDefault("dynamicIpChannel", "");
+            String staticIpChannel = resetParams.getOrDefault("staticIpChannel", "");
+            if (dynamicIpChannel == null || dynamicIpChannel.trim().isEmpty()) {
+                dynamicIpChannel = "netnut_biu";
+            } else {
+                dynamicIpChannel = dynamicIpChannel.trim();
+            }
+            if (staticIpChannel == null || staticIpChannel.trim().isEmpty()) {
+                staticIpChannel = "ipidea";
+            } else {
+                staticIpChannel = staticIpChannel.trim();
+            }
+            log.info("{} {} - 使用IP渠道: dynamicIpChannel={}, staticIpChannel={}",
                     logPrefix, phoneId, dynamicIpChannel, staticIpChannel);
             
             String biz = resetParams.getOrDefault("biz", "");
@@ -2559,41 +2729,63 @@ public class TtRegisterService {
                         }
                     }
                     
-                    // 获取信号量（按服务器分组，控制并发数）
+                    // 先获取令牌桶许可（速率控制），均匀分散对同一服务器的Reset请求
+                    // 若令牌桶已空则阻塞等待，直到下一个令牌补充（约60/rate 秒）
+                    RateLimiter rateLimiter = getResetPhoneEnvRateLimiter(serverIp);
+                    double waitSeconds = rateLimiter.acquire();
+                    if (waitSeconds > 0.1) {
+                        log.info("{} {} - 令牌桶限流等待 {}s（服务器: {}，速率: {}/min）",
+                                logPrefix, phoneId, String.format("%.1f", waitSeconds), serverIp, resetRatePerMinutePerServer);
+                    }
+
+                    // 再获取信号量（并发上限），防止超过服务器最大并发能力
                     Semaphore semaphore = getResetPhoneEnvSemaphore(serverIp);
                     log.debug("{} {} - 等待ResetPhoneEnv调用许可（服务器: {}，当前可用: {}）", logPrefix, phoneId, serverIp, semaphore.availablePermits());
                     semaphore.acquire();
                     long apiCallStartTime = System.currentTimeMillis();
                     try {
-                        int currentConcurrency = MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER - semaphore.availablePermits();
-                        log.info("{} {} - 开始调用ResetPhoneEnv接口（服务器: {}，当前并发: {}/{}）", 
-                                logPrefix, phoneId, serverIp, currentConcurrency, MAX_RESET_PHONE_ENV_CONCURRENCY_PER_SERVER);
-                        
+                        int currentConcurrency = maxResetPhoneEnvConcurrencyPerServer - semaphore.availablePermits();
+                        log.info("{} {} - 开始调用ResetPhoneEnv接口（服务器: {}，当前并发: {}/{}）",
+                                logPrefix, phoneId, serverIp, currentConcurrency, maxResetPhoneEnvConcurrencyPerServer);
+
                         try {
                             // 10.7 网段仍调用 ResetPhoneEnv；10.13 网段改为调用 TTFarmResetPhone（xray_server_ip 暂写死）
+                            // 用 CompletableFuture + 超时保护：若 ResetPhoneEnv 卡住超过 8 分钟，立即放弃并释放信号量槽位，
+                            // 避免一台卡死的手机长期占用并发槽，拖累所有其他手机
+                            final String finalCountry = country;
+                            final String finalSdk = sdk;
+                            final String finalImagePath = imagePath;
+                            final String finalGaidTag = gaidTag;
+                            final String finalDynamicIpChannel = dynamicIpChannel;
+                            final String finalStaticIpChannel = staticIpChannel;
+                            final String finalBiz = biz;
+                            CompletableFuture<Map<String, Object>> resetFuture;
                             if (serverIp != null && serverIp.startsWith("10.13.")) {
-                                resetResult = apiService.ttFarmResetPhone(
-                                        phoneId,
-                                        serverIp,
-                                        "192.168.41.84",
-                                        country,
-                                        sdk,
-                                        imagePath,
-                                        dynamicIpChannel,
-                                        false
-                                );
+                                resetFuture = CompletableFuture.supplyAsync(() ->
+                                    apiService.ttFarmResetPhone(
+                                            phoneId, serverIp, "192.168.41.84",
+                                            finalCountry, finalSdk, finalImagePath,
+                                            finalDynamicIpChannel, false
+                                    ), sshCommandExecutor);
                             } else {
-                                resetResult = apiService.resetPhoneEnv(
-                                        phoneId,
-                                        serverIp,
-                                        country,
-                                        sdk,
-                                        imagePath,
-                                        gaidTag,
-                                        dynamicIpChannel,
-                                        staticIpChannel,
-                                        biz
-                                );
+                                resetFuture = CompletableFuture.supplyAsync(() ->
+                                    apiService.resetPhoneEnv(
+                                            phoneId, serverIp,
+                                            finalCountry, finalSdk, finalImagePath, finalGaidTag,
+                                            finalDynamicIpChannel, finalStaticIpChannel, finalBiz
+                                    ), sshCommandExecutor);
+                            }
+                            try {
+                                resetResult = resetFuture.get(7, TimeUnit.MINUTES);
+                            } catch (java.util.concurrent.TimeoutException te) {
+                                resetFuture.cancel(true);
+                                long elapsed = System.currentTimeMillis() - apiCallStartTime;
+                                log.error("{} {} - ResetPhoneEnv调用超时（已等待 {}ms，超过7分钟上限），立即释放信号量槽位",
+                                        logPrefix, phoneId, elapsed);
+                                throw new RuntimeException("ResetPhoneEnv超时（>7min），phoneId=" + phoneId);
+                            } catch (java.util.concurrent.ExecutionException ee) {
+                                throw (ee.getCause() instanceof Exception)
+                                        ? (Exception) ee.getCause() : new RuntimeException(ee.getCause());
                             }
                             long apiCallDuration = System.currentTimeMillis() - apiCallStartTime;
                             log.info("{} {} - ResetPhoneEnv接口调用完成，耗时: {}ms", logPrefix, phoneId, apiCallDuration);
@@ -2648,14 +2840,24 @@ public class TtRegisterService {
                             
                         if (code != 0) {
                             String message = (String) responseStatus.get("message");
-                                log.warn("{} {} - ResetPhoneEnv返回非0状态码: code={}, message={}, 重试次数: {}/{}", 
+                                log.warn("{} {} - ResetPhoneEnv返回非0状态码: code={}, message={}, 重试次数: {}/{}",
                                         logPrefix, phoneId, code, message, retryCount, maxRetries);
-                                if (retryCount < maxRetries) {
+                                // 代理配置失败（远端已自行重试多次）属于不可重试的确定性失败，直接 fail fast
+                                boolean isNonRetryable = message != null && (
+                                        message.contains("failed after") ||
+                                        message.contains("SetupAndVerifyProxy") ||
+                                        message.contains("Both IP verification APIs failed"));
+                                if (!isNonRetryable && retryCount < maxRetries) {
                                     retryCount++;
                                     continue; // 继续重试
                                 } else {
-                                    log.error("{} {} - ResetPhoneEnv重试{}次后仍失败: code={}, message={}", 
-                                            logPrefix, phoneId, maxRetries, code, message);
+                                    if (isNonRetryable) {
+                                        log.error("{} {} - ResetPhoneEnv不可重试失败（代理/IP验证确定性错误）: code={}, message={}",
+                                                logPrefix, phoneId, code, message);
+                                    } else {
+                                        log.error("{} {} - ResetPhoneEnv重试{}次后仍失败: code={}, message={}",
+                                                logPrefix, phoneId, maxRetries, code, message);
+                                    }
                             maybeRequestCreateFarmOnGaidError(message);
                             return "FAILED: ResetPhoneEnv失败 (code=" + code + ") - " + message;
                         }
@@ -6317,7 +6519,7 @@ public class TtRegisterService {
             }
             
             // 先添加到内存停止集合（立即生效）
-            stoppedTaskIds.add(taskId);
+            markTaskStopped(taskId);
 
             // 任务正在运行时，尝试强制终止远端注册脚本进程（避免仅改状态但进程仍在跑）
             if ("RUNNING".equals(task.getStatus())) {
@@ -6528,7 +6730,7 @@ public class TtRegisterService {
             ttRegisterTaskRepository.updateById(task);
             
             // 清除停止标志（如果存在）
-            stoppedTaskIds.remove(taskId);
+            clearTaskStopped(taskId);
             
             log.info("任务 {} 状态已重置为 PENDING，已清除停止标志", taskId);
             
