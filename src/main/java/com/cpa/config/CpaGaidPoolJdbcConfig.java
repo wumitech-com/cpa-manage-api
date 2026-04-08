@@ -2,6 +2,7 @@ package com.cpa.config;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,7 +31,7 @@ public class CpaGaidPoolJdbcConfig {
     }
 
     @Bean(name = "cpaGaidJdbcTemplate")
-    public JdbcTemplate cpaGaidJdbcTemplate(DataSource cpaGaidDataSource) {
+    public JdbcTemplate cpaGaidJdbcTemplate(@Qualifier("cpaGaidDataSource") DataSource cpaGaidDataSource) {
         return new JdbcTemplate(cpaGaidDataSource);
     }
 }
