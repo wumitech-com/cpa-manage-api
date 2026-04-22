@@ -33,7 +33,7 @@ cpa-api:
 # 邮箱池低库存告警（仅低于阈值时发送，正常不发送）
 email-pool:
   alert:
-    enabled: true
+    enabled: false
     threshold: 5000
     cron: "0 30 11 * * ?"
     wecom-webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=323e7c83-6dbe-4483-b39c-22036228deb9"
