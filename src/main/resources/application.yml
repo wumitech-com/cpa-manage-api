@@ -6,7 +6,12 @@ spring:
     name: cpa-manage-api
   
   profiles:
-    active: prod  # 默认使用开发环境配置
+    active: dev  # 默认使用本地开发环境配置
+
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 30MB
   
   # JPA配置
   jpa:
@@ -48,6 +53,14 @@ tt-register:
 # CPA API配置
 cpa-api:
   base-url: "https://cpa-api.wumitech.com"  # CPA API基础URL
+
+# 邮箱池低库存告警（仅低于阈值时发送，正常不发送）
+email-pool:
+  alert:
+    enabled: false
+    threshold: 5000
+    cron: "0 0 */2 * * ?"
+    wecom-webhook: ""
 
 # 日志配置
 logging:

@@ -1,7 +1,8 @@
 # CPA Manage API Docker Image Build and Push Script
 $ErrorActionPreference = "Continue"
 param(
-    [switch]$ForceFrontendInstall
+    [switch]$ForceFrontendInstall,
+    [switch]$SkipFrontendBuild
 )
 
 # Always run from script directory to avoid picking wrong Dockerfile/context.
@@ -53,66 +54,72 @@ $frontendDir = "src\main\resources\static\console-vue"
 $frontendPackageJson = Join-Path $frontendDir "package.json"
 $frontendIndex = Join-Path $frontendDir "index.html"
 $frontendIndexTemplate = Join-Path $frontendDir "index.template.html"
-if (-not (Test-Path $frontendPackageJson)) {
-    Write-Host "Frontend package.json not found: $frontendPackageJson" -ForegroundColor Red
-    exit 1
-}
-if (-not (Test-Path $frontendIndexTemplate)) {
-    Write-Host "Frontend index template missing: $frontendIndexTemplate" -ForegroundColor Red
-    exit 1
-}
-
-# Ensure source index is always in Vite entry form before running frontend build.
-Copy-Item $frontendIndexTemplate $frontendIndex -Force
-
-npm -v 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "npm is not available. Please install Node.js/npm first." -ForegroundColor Red
-    exit 1
-}
-
-Push-Location $frontendDir
-try {
-    $nodeModulesDir = Join-Path (Get-Location) "node_modules"
-    $needInstall = $ForceFrontendInstall -or (-not (Test-Path $nodeModulesDir))
-    $vueTscCmd = Get-Command vue-tsc -ErrorAction SilentlyContinue
-    if (-not $vueTscCmd) {
-        $binVueTsc = Join-Path (Get-Location) "node_modules\.bin\vue-tsc.cmd"
-        if (-not (Test-Path $binVueTsc)) {
-            $needInstall = $true
-        }
+$frontendBuilt = $false
+if ($SkipFrontendBuild) {
+    Write-Host "Skip frontend build by -SkipFrontendBuild (backend-only deploy mode)." -ForegroundColor Yellow
+} else {
+    if (-not (Test-Path $frontendPackageJson)) {
+        Write-Host "Frontend package.json not found: $frontendPackageJson" -ForegroundColor Red
+        exit 1
+    }
+    if (-not (Test-Path $frontendIndexTemplate)) {
+        Write-Host "Frontend index template missing: $frontendIndexTemplate" -ForegroundColor Red
+        exit 1
     }
 
-    if ($needInstall) {
-        Write-Host "Installing frontend dependencies..." -ForegroundColor Gray
-        npm install --no-audit --no-fund
+    # Ensure source index is always in Vite entry form before running frontend build.
+    Copy-Item $frontendIndexTemplate $frontendIndex -Force
+
+    npm -v 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "npm is not available. Please install Node.js/npm first." -ForegroundColor Red
+        exit 1
+    }
+
+    Push-Location $frontendDir
+    try {
+        $nodeModulesDir = Join-Path (Get-Location) "node_modules"
+        $needInstall = $ForceFrontendInstall -or (-not (Test-Path $nodeModulesDir))
+        $vueTscCmd = Get-Command vue-tsc -ErrorAction SilentlyContinue
+        if (-not $vueTscCmd) {
+            $binVueTsc = Join-Path (Get-Location) "node_modules\.bin\vue-tsc.cmd"
+            if (-not (Test-Path $binVueTsc)) {
+                $needInstall = $true
+            }
+        }
+
+        if ($needInstall) {
+            Write-Host "Installing frontend dependencies..." -ForegroundColor Gray
+            npm install --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "Frontend dependency install failed!" -ForegroundColor Red
+                Write-Host "Hint: close Vite/node processes, then retry with admin if needed." -ForegroundColor Yellow
+                exit 1
+            }
+        } else {
+            Write-Host "Using existing node_modules (skip install)." -ForegroundColor Gray
+        }
+
+        npm run build
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "Frontend dependency install failed!" -ForegroundColor Red
-            Write-Host "Hint: close Vite/node processes, then retry with admin if needed." -ForegroundColor Yellow
+            Write-Host "Frontend build failed!" -ForegroundColor Red
             exit 1
         }
-    } else {
-        Write-Host "Using existing node_modules (skip install)." -ForegroundColor Gray
-    }
 
-    npm run build
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Frontend build failed!" -ForegroundColor Red
-        exit 1
-    }
+        $distDir = Join-Path (Get-Location) "dist"
+        $distIndex = Join-Path $distDir "index.html"
+        if (-not (Test-Path $distIndex)) {
+            Write-Host "Frontend dist output missing: $distIndex" -ForegroundColor Red
+            exit 1
+        }
 
-    $distDir = Join-Path (Get-Location) "dist"
-    $distIndex = Join-Path $distDir "index.html"
-    if (-not (Test-Path $distIndex)) {
-        Write-Host "Frontend dist output missing: $distIndex" -ForegroundColor Red
-        exit 1
+        Copy-Item (Join-Path $distDir "*") (Get-Location) -Recurse -Force
+        $frontendBuilt = $true
+    } finally {
+        Pop-Location
     }
-
-    Copy-Item (Join-Path $distDir "*") (Get-Location) -Recurse -Force
-} finally {
-    Pop-Location
+    Write-Host "Vue frontend build success!" -ForegroundColor Green
 }
-Write-Host "Vue frontend build success!" -ForegroundColor Green
 Write-Host ""
 
 # Step 2: Check Docker
@@ -136,8 +143,17 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Maven build success!" -ForegroundColor Green
 Write-Host ""
 
-# Restore source index to template form to avoid polluting repo with built index.html.
-Copy-Item $frontendIndexTemplate $frontendIndex -Force
+# Restore source index to template form and remove any dist artefacts copied into source tree.
+if ($frontendBuilt) {
+    Copy-Item $frontendIndexTemplate $frontendIndex -Force
+    $frontendCopiedItems = @("assets", "icons.svg", "favicon.svg")
+    foreach ($item in $frontendCopiedItems) {
+        $target = Join-Path $frontendDir $item
+        if (Test-Path $target) {
+            Remove-Item $target -Recurse -Force
+        }
+    }
+}
 
 # Check JAR file
 $jarFile = "target\cpa-manage-api-0.0.1-SNAPSHOT.jar"
@@ -165,9 +181,12 @@ Write-Host "Dockerfile base line: $dockerfileFirstLine" -ForegroundColor Gray
 
 # Force classic builder and forbid pulling remote base image metadata.
 # This makes docker build use local pulled base image first.
+$prevBuildKit = $env:DOCKER_BUILDKIT
 $env:DOCKER_BUILDKIT = "0"
 docker build --pull=false -f $dockerfilePath -t ${fullImageNameTimestamp} -t ${fullImageNameLatest} .
-if ($LASTEXITCODE -ne 0) {
+$buildExitCode = $LASTEXITCODE
+$env:DOCKER_BUILDKIT = $prevBuildKit
+if ($buildExitCode -ne 0) {
     Write-Host "Docker image build failed!" -ForegroundColor Red
     exit 1
 }

@@ -109,3 +109,11 @@ cpa:
       username: root
       password: Wumitech
       driver-class-name: com.mysql.cj.jdbc.Driver
+
+# 邮箱池低库存告警（仅低于阈值时发送）
+email-pool:
+  alert:
+    enabled: true
+    threshold: 5000
+    cron: "0 0 */2 * * ?"
+    wecom-webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=323e7c83-6dbe-4483-b39c-22036228deb9"

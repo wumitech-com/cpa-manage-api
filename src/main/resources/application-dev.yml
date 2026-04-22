@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: "jdbc:mysql://localhost:3306/tt?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false"
+    url: "jdbc:mysql://localhost:3306/tt?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true"
     username: root
-    password: wumitech
+    password: wumitech.com
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   redis:
@@ -29,6 +29,14 @@ tt-register:
 # CPA API配置
 cpa-api:
   base-url: "https://cpa-api.wumitech.com"  # CPA API基础URL
+
+# 邮箱池低库存告警（仅低于阈值时发送，正常不发送）
+email-pool:
+  alert:
+    enabled: true
+    threshold: 5000
+    cron: "0 30 11 * * ?"
+    wecom-webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=323e7c83-6dbe-4483-b39c-22036228deb9"
 
 # SSH配置
 agent:
