@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import PageBlock from '../components/PageBlock.vue'
 import { getTaskList, resumeTask, stopTask, updateTask, type TaskItem } from '../api/taskApi'
+import PageHeader from '../shared/ui/PageHeader.vue'
+import { useConsoleMetaStore } from '../entities/console/store'
 
 const loading = ref(false)
 const rows = ref<TaskItem[]>([])
@@ -20,6 +22,10 @@ const statusOptions = ['ALL', 'PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'STOP
 const activeRow = ref<TaskItem | null>(null)
 const editVisible = ref(false)
 const editSaving = ref(false)
+const metaStore = useConsoleMetaStore()
+const canStopTask = computed(() => metaStore.hasPermission('task:stop'))
+const canResumeTask = computed(() => metaStore.hasPermission('task:resume'))
+const canUpdateTask = computed(() => metaStore.hasPermission('task:update'))
 const editForm = reactive({
   taskId: '',
   country: '',
@@ -108,6 +114,7 @@ function statusType(status?: string): 'success' | 'warning' | 'danger' | 'info' 
 }
 
 function openEdit(row: TaskItem) {
+  if (!canUpdateTask.value) return
   activeRow.value = row
   editForm.taskId = row.taskId || ''
   editForm.country = row.country || ''
@@ -168,15 +175,9 @@ onMounted(loadData)
 
 <template>
   <section>
-    <div class="page-head">
-      <div>
-        <h2>任务管理</h2>
-        <p>任务查询、分页与运行状态控制</p>
-      </div>
-      <div class="toolbar">
+    <PageHeader title="任务管理" description="任务查询、分页与运行状态控制">
         <el-button type="primary" :loading="loading" @click="loadData">刷新</el-button>
-      </div>
-    </div>
+    </PageHeader>
 
     <PageBlock title="筛选条件">
       <div class="toolbar">
@@ -208,7 +209,7 @@ onMounted(loadData)
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.status === 'STOPPED' || row.status === 'FAILED'"
+              v-if="canResumeTask && (row.status === 'STOPPED' || row.status === 'FAILED')"
               size="small"
               type="warning"
               plain
@@ -216,7 +217,7 @@ onMounted(loadData)
             >
               恢复
             </el-button>
-            <el-button size="small" type="danger" plain @click.stop="handleStop(row)">停止</el-button>
+            <el-button v-if="canStopTask" size="small" type="danger" plain @click.stop="handleStop(row)">停止</el-button>
           </template>
         </el-table-column>
       </el-table>

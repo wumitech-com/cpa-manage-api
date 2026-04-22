@@ -5,6 +5,7 @@ import type { EChartsOption } from 'echarts'
 import StatCard from '../components/StatCard.vue'
 import EChartPanel from '../components/EChartPanel.vue'
 import { getDailyDetail, getDailyOverview, getDailyTrend, type DailyTrendItem, type DistItem } from '../api/statsApi'
+import PageHeader from '../shared/ui/PageHeader.vue'
 
 const loading = ref(false)
 const date = ref(dayjs().format('YYYY-MM-DD'))
@@ -31,6 +32,15 @@ const detail = ref<{
   trafficAvgPerSuccess?: number
   trafficTotalAll?: number
 }>({})
+
+/** 全量总流量(bytes) ÷ 今日注册成功数，展示 MB */
+const registerSuccessAvgTrafficMb = computed(() => {
+  const totalBytes = Number(detail.value.trafficTotalAll || 0)
+  const success = Number(overview.value.todayRegisterSuccess || 0)
+  if (success <= 0) return '—'
+  const mb = totalBytes / success / 1024 / 1024
+  return `${mb.toFixed(2)} MB`
+})
 
 /** 全量总流量(bytes) ÷ 今日注册数，展示 MB */
 const singleAvgTrafficMb = computed(() => {
@@ -106,11 +116,41 @@ const filteredServerRows = computed(() => {
   if (!kw) return serverHourly2faTable.value
   return serverHourly2faTable.value.filter((row) => String(row.serverIp || '').toLowerCase().includes(kw))
 })
+const filteredServerRegisterRows = computed(() => {
+  const kw = serverKeyword.value.trim().toLowerCase()
+  const rows = (serverHourlyRegister.value || []).map((row) => {
+    const r: Record<string, any> = {
+      serverIp: String((row as any).serverIp || ''),
+      registerSuccess: Number((row as any).total || 0) || 0,
+      createdTotal: Number((row as any).createdTotal || 0) || 0,
+      registerSuccessRate: Number((row as any).registerSuccessRate || 0) || 0
+    }
+    for (let h = 0; h < 24; h++) {
+      const key = `h${String(h).padStart(2, '0')}`
+      r[key] = Number((row as any)[key] || 0) || 0
+    }
+    return r
+  })
+  if (!kw) return rows
+  return rows.filter((row) => row.serverIp.toLowerCase().includes(kw))
+})
 const serverSummary = computed(() => {
   const rows = filteredServerRows.value
   return {
     serverCount: rows.length,
     twofaTotal: rows.reduce((sum, row) => sum + Number(row.total || 0), 0)
+  }
+})
+const registerSummary = computed(() => {
+  const rows = filteredServerRegisterRows.value
+  const registerSuccessTotal = rows.reduce((sum, row) => sum + row.registerSuccess, 0)
+  const createdTotal = rows.reduce((sum, row) => sum + row.createdTotal, 0)
+  const registerSuccessRate = createdTotal > 0 ? (registerSuccessTotal / createdTotal) * 100 : 0
+  return {
+    serverCount: rows.length,
+    registerSuccessTotal,
+    createdTotal,
+    registerSuccessRate
   }
 })
 
@@ -169,17 +209,11 @@ onMounted(loadData)
 
 <template>
   <section>
-    <div class="page-head">
-      <div>
-        <h2>总览看板</h2>
-        <p>企业级注册与转化指标看板</p>
-      </div>
-      <div class="toolbar">
+    <PageHeader title="总览看板" description="企业级注册与转化指标看板">
         <el-date-picker v-model="date" type="date" value-format="YYYY-MM-DD" />
         <el-button @click="setToday">今天</el-button>
         <el-button type="primary" :loading="loading" @click="loadData">刷新</el-button>
-      </div>
-    </div>
+    </PageHeader>
 
     <div class="grid-4">
       <StatCard label="今日注册" :value="overview.todayRegister" />
@@ -192,7 +226,11 @@ onMounted(loadData)
       <StatCard label="今日2FA设置成功率" :value="`${overview.today2faSetupSuccessRate || 0}%`" />
     </div>
     <div class="grid-3">
-      <StatCard label="2FA 总流量" :value="fmtGb(detail.trafficTotal)" />
+      <StatCard
+        label="注册成功平均流量"
+        :value="registerSuccessAvgTrafficMb"
+        hint="全量总流量 ÷ 今日注册成功数"
+      />
       <StatCard
         label="单个平均流量"
         :value="singleAvgTrafficMb"
@@ -221,6 +259,25 @@ onMounted(loadData)
           </template>
         </el-table-column>
         <el-table-column v-for="col in hourColumns" :key="col" :prop="col" :label="hourLabel(col)" width="68" />
+      </el-table>
+    </div>
+
+    <div class="card page-block">
+      <div class="panel-title">各服务器注册成功量与成功率</div>
+      <div class="toolbar wrap">
+        <el-tag type="info">服务器总数：{{ registerSummary.serverCount }}</el-tag>
+        <el-tag type="success">注册成功总量：{{ registerSummary.registerSuccessTotal }}</el-tag>
+        <el-tag>注册总量：{{ registerSummary.createdTotal }}</el-tag>
+        <el-tag type="warning">整体成功率：{{ registerSummary.registerSuccessRate.toFixed(2) }}%</el-tag>
+      </div>
+      <el-table :data="filteredServerRegisterRows" style="width: 100%; margin-top: 10px;" max-height="320">
+        <el-table-column prop="serverIp" label="服务器IP" min-width="180" fixed="left" />
+        <el-table-column prop="registerSuccess" label="注册成功量" width="120" />
+        <el-table-column prop="createdTotal" label="注册总量" width="120" />
+        <el-table-column label="注册成功率" width="120">
+          <template #default="{ row }">{{ row.registerSuccessRate.toFixed(2) }}%</template>
+        </el-table-column>
+        <el-table-column v-for="col in hourColumns" :key="`register-${col}`" :prop="col" :label="hourLabel(col)" width="68" />
       </el-table>
     </div>
 

@@ -42,6 +42,12 @@ async function runInspect() {
       `ADB连接: ${adbCommand.value || '-'}`,
       `服务IP: ${res.data.serverIp || '-'}`
     ].join('\n')
+  } catch (err: any) {
+    const isTimeout = err?.code === 'ECONNABORTED' || String(err?.message || '').toLowerCase().includes('timeout')
+    result.value = isTimeout
+      ? '执行超时（已等待 180 秒）。后端任务可能仍在执行，请稍后重试或查看后端日志确认最终结果。'
+      : `执行失败：${err?.response?.data?.message || err?.message || '未知错误'}`
+    ElMessage.error(isTimeout ? '设备巡检超时，请稍后重试' : '设备巡检失败')
   } finally {
     loading.value = false
   }

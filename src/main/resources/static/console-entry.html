@@ -15,7 +15,7 @@
       } else {
         ui = localStorage.getItem('console_ui_version') || 'v2';
       }
-      var target = ui === 'v2' ? '/console-vue/' : '/console.html';
+      var target = '/console-vue/';
       location.replace(target);
     })();
   </script>

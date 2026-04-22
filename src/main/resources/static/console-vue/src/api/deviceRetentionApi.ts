@@ -40,7 +40,11 @@ export interface RetentionData {
 }
 
 export async function inspectDevice(phoneId: string, gaid: string) {
-  const { data } = await http.post<ApiResp<DeviceInspectResp>>('/api/tt-register/device/inspect', { phoneId, gaid })
+  const { data } = await http.post<ApiResp<DeviceInspectResp>>(
+    '/api/tt-register/device/inspect',
+    { phoneId, gaid },
+    { timeout: 300000 }
+  )
   return data
 }
 

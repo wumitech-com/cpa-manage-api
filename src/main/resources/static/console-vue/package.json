@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node ./scripts/ensure-dev-html.mjs && vite",
     "build": "vue-tsc -b && vite build",
+    "build:spring": "node ./scripts/build-spring.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

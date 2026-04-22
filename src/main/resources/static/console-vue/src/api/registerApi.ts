@@ -1,4 +1,6 @@
 import http from './http'
+import { requestApi } from '../shared/api/request'
+import { toPagedResponse } from '../shared/contracts/api'
 import type { ApiResp } from './statsApi'
 
 export interface AccountItem {
@@ -118,13 +120,28 @@ function toQuery(params: Record<string, string | number | undefined>) {
 }
 
 export async function getAccountList(params: AccountQuery) {
-  const { data } = await http.get<ApiResp<PagedResp<AccountItem>>>(`/api/tt-register/account/list?${toQuery(params as unknown as Record<string, string | number | undefined>)}`)
-  return data
+  const res = await requestApi<PagedResp<AccountItem>>({
+    path: '/api/tt-register/account/list',
+    params: params as unknown as Record<string, string | number | boolean | undefined>
+  })
+  if (res.success && res.data) {
+    res.data = {
+      ...toPagedResponse(res.data, { page: params.page, size: params.size }),
+      totalAccurate: res.data.totalAccurate
+    }
+  }
+  return res as ApiResp<PagedResp<AccountItem>>
 }
 
 export async function getWindowList(params: WindowQuery) {
-  const { data } = await http.get<ApiResp<PagedResp<WindowItem>>>(`/api/tt-register/window/list?${toQuery(params as unknown as Record<string, string | number | undefined>)}`)
-  return data
+  const res = await requestApi<PagedResp<WindowItem>>({
+    path: '/api/tt-register/window/list',
+    params: params as unknown as Record<string, string | number | boolean | undefined>
+  })
+  if (res.success && res.data) {
+    res.data = toPagedResponse(res.data, { page: params.page, size: params.size })
+  }
+  return res as ApiResp<PagedResp<WindowItem>>
 }
 
 export async function exportAccountList(params: AccountQuery) {
@@ -146,8 +163,12 @@ export async function getAccountDetail(id: number) {
 }
 
 export async function updateAccount(payload: (Partial<AccountItem> & { id: number }) & { newEmailBindSuccess?: number | null }) {
-  const { data } = await http.post<ApiResp<AccountItem>>('/api/tt-register/account/update', payload)
-  return data
+  return requestApi<AccountItem>({
+    path: '/api/tt-register/account/update',
+    method: 'POST',
+    data: payload,
+    auditAction: 'account.update'
+  })
 }
 
 export async function getAccountDateSummary(startDate?: string, endDate?: string) {
@@ -164,11 +185,15 @@ export async function getAccountFilterStats(params: Omit<AccountQuery, 'page' | 
 }
 
 export async function startNurtureAccounts(accountIds: number[]) {
-  const { data } = await http.post<ApiResp<{
+  return requestApi<{
     updatedCount: number
     insertedCount: number
     skipCount: number
     errors?: string[]
-  }>>('/api/tt-register/account/start-nurture', { accountIds })
-  return data
+  }>({
+    path: '/api/tt-register/account/start-nurture',
+    method: 'POST',
+    data: { accountIds },
+    auditAction: 'account.startNurture'
+  })
 }

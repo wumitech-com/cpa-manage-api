@@ -47,6 +47,12 @@ async function runInspect() {
     ].join('\n')
     tunnelCommand.value = res.data.tunnelCommand || ''
     adbCommand.value = res.data.adbConnectCommand || ''
+  } catch (err: any) {
+    const isTimeout = err?.code === 'ECONNABORTED' || String(err?.message || '').toLowerCase().includes('timeout')
+    inspectResult.value = isTimeout
+      ? '执行超时（已等待 180 秒）。后端任务可能仍在执行，请稍后重试或查看后端日志确认最终结果。'
+      : `执行失败：${err?.response?.data?.message || err?.message || '未知错误'}`
+    ElMessage.error(isTimeout ? '设备巡检超时，请稍后重试' : '设备巡检失败')
   } finally {
     inspectLoading.value = false
   }

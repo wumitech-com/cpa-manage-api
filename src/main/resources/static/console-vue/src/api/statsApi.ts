@@ -1,10 +1,6 @@
-import http from './http'
-
-export interface ApiResp<T> {
-  success: boolean
-  message?: string
-  data?: T
-}
+import { requestApi } from '../shared/api/request'
+import type { ApiResponse as ApiResp } from '../shared/contracts/api'
+export type { ApiResp }
 
 export interface DailyOverview {
   todayRegister: number
@@ -67,6 +63,8 @@ export interface TwofaDetail {
 }
 
 export interface BlockRateData {
+  queryDate?: string
+  country?: string
   nextDay?: BlockRateItem
   threeDay?: BlockRateItem
   sevenDay?: BlockRateItem
@@ -82,6 +80,7 @@ export interface BlockRateTrendData {
     blocked?: number
     blockRate?: number
   }>
+  country?: string
 }
 
 export interface BlockRateDailyItem {
@@ -91,43 +90,87 @@ export interface BlockRateDailyItem {
   blockRate: number
 }
 
+export interface BlockRateMatrixCell {
+  offset: number
+  cohortDate: string
+  total: number
+  blockedAsOfRow: number
+  blockRateAsOfRow: number
+  blockedNextDay: number
+  nextDayBlockRate: number
+}
+
+export interface BlockRateMatrixRow {
+  rowDate: string
+  cells: BlockRateMatrixCell[]
+}
+
+export interface BlockRateMatrixData {
+  start: string
+  end: string
+  country?: string
+  rows: BlockRateMatrixRow[]
+}
+
 export async function getDailyOverview(date?: string) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : ''
-  const { data } = await http.get<ApiResp<DailyOverview>>(`/api/statistics/daily-register/overview${qs}`)
-  return data
+  return requestApi<DailyOverview>({
+    path: '/api/statistics/daily-register/overview',
+    params: { date }
+  })
 }
 
 export async function getDailyTrend(date?: string) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : ''
-  const { data } = await http.get<ApiResp<{ dailyTrend: DailyTrendItem[] }>>(`/api/statistics/daily-register/trend${qs}`)
-  return data
+  return requestApi<{ dailyTrend: DailyTrendItem[] }>({
+    path: '/api/statistics/daily-register/trend',
+    params: { date }
+  })
 }
 
 export async function getDailyDetail(date?: string) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : ''
-  const { data } = await http.get<ApiResp<{ twofaDetail?: TwofaDetail }>>(`/api/statistics/daily-register/detail${qs}`)
-  return data
+  return requestApi<{ twofaDetail?: TwofaDetail }>({
+    path: '/api/statistics/daily-register/detail',
+    params: { date }
+  })
 }
 
-export async function getBlockRate(date?: string) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : ''
-  const { data } = await http.get<ApiResp<BlockRateData>>(`/api/statistics/block-rate${qs}`)
-  return data
+function blockRateQuery(date?: string, country?: string) {
+  const p = new URLSearchParams()
+  if (date) p.set('date', date)
+  if (country && country !== 'ALL') p.set('country', country)
+  const s = p.toString()
+  return s ? `?${s}` : ''
 }
 
-export async function getBlockRateTrend(date?: string) {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : ''
-  const { data } = await http.get<ApiResp<BlockRateTrendData>>(`/api/statistics/block-rate-trend${qs}`)
-  return data
+export async function getBlockRate(date?: string, country?: string) {
+  const params = new URLSearchParams(blockRateQuery(date, country).replace(/^\?/, ''))
+  return requestApi<BlockRateData>({
+    path: '/api/statistics/block-rate',
+    params: Object.fromEntries(params.entries())
+  })
+}
+
+export async function getBlockRateTrend(date?: string, country?: string) {
+  const params = new URLSearchParams(blockRateQuery(date, country).replace(/^\?/, ''))
+  return requestApi<BlockRateTrendData>({
+    path: '/api/statistics/block-rate-trend',
+    params: Object.fromEntries(params.entries())
+  })
+}
+
+export async function getBlockRateMatrix(start: string, end: string, country?: string) {
+  return requestApi<BlockRateMatrixData>({
+    path: '/api/statistics/block-rate-matrix',
+    params: {
+      start,
+      end,
+      country: country && country !== 'ALL' ? country : undefined
+    }
+  })
 }
 
 export async function getBlockRateDaily(date?: string, days: number = 40) {
-  const qs = []
-  if (date) qs.push(`date=${encodeURIComponent(date)}`)
-  qs.push(`days=${days}`)
-  const query = qs.length ? `?${qs.join('&')}` : ''
-  const { data } = await http.get<ApiResp<{ queryDate: string; days: number; daily: BlockRateDailyItem[] }>>(
-    `/api/statistics/block-rate-daily${query}`
-  )
-  return data
+  return requestApi<{ queryDate: string; days: number; daily: BlockRateDailyItem[] }>({
+    path: '/api/statistics/block-rate-daily',
+    params: { date, days }
+  })
 }

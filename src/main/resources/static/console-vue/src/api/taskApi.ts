@@ -1,4 +1,5 @@
-import http from './http'
+import { requestApi } from '../shared/api/request'
+import { toPagedResponse } from '../shared/contracts/api'
 import type { ApiResp } from './statsApi'
 
 export interface TaskItem {
@@ -36,19 +37,28 @@ export interface TaskQuery {
 }
 
 export async function getTaskList(query: TaskQuery) {
-  const params = new URLSearchParams()
-  params.set('page', String(query.page))
-  params.set('size', String(query.size))
-  if (query.status && query.status !== 'ALL') params.set('status', query.status)
-  if (query.serverIp) params.set('serverIp', query.serverIp)
-  if (query.phoneId) params.set('phoneId', query.phoneId)
-  const { data } = await http.get<ApiResp<Paged<TaskItem>>>(`/api/tt-register/task/list?${params.toString()}`)
-  return data
+  const result = await requestApi<Paged<TaskItem>>({
+    path: '/api/tt-register/task/list',
+    params: {
+      page: query.page,
+      size: query.size,
+      status: query.status && query.status !== 'ALL' ? query.status : undefined,
+      serverIp: query.serverIp,
+      phoneId: query.phoneId
+    }
+  })
+  if (result.success && result.data) {
+    result.data = toPagedResponse(result.data, { page: query.page, size: query.size })
+  }
+  return result as ApiResp<Paged<TaskItem>>
 }
 
 export async function stopTask(taskId: string) {
-  const { data } = await http.post<ApiResp<unknown>>(`/api/tt-register/stop/${encodeURIComponent(taskId)}`)
-  return data
+  return requestApi<unknown>({
+    path: `/api/tt-register/stop/${encodeURIComponent(taskId)}`,
+    method: 'POST',
+    auditAction: 'task.stop'
+  })
 }
 
 export interface TaskUpdatePayload {
@@ -63,12 +73,53 @@ export interface TaskUpdatePayload {
   targetCount?: string | number
 }
 
+export interface TaskCreatePayload {
+  taskType: 'FAKE_EMAIL' | 'REAL_EMAIL'
+  serverIp: string
+  phoneId: string
+  targetCount?: number
+  tiktokVersionDir?: string
+  country?: string
+  sdk?: string
+  imagePath?: string
+  gaidTag?: string
+  dynamicIpChannel?: string
+  staticIpChannel?: string
+  biz?: string
+  appiumServer?: string
+  xrayServerIp?: string
+}
+
 export async function updateTask(payload: TaskUpdatePayload) {
-  const { data } = await http.post<ApiResp<unknown>>('/api/tt-register/task/update', payload)
-  return data
+  return requestApi<unknown>({
+    path: '/api/tt-register/task/update',
+    method: 'POST',
+    data: payload,
+    auditAction: 'task.update'
+  })
 }
 
 export async function resumeTask(taskId: string) {
-  const { data } = await http.post<ApiResp<unknown>>(`/api/tt-register/task/resume/${encodeURIComponent(taskId)}`)
-  return data
+  return requestApi<unknown>({
+    path: `/api/tt-register/task/resume/${encodeURIComponent(taskId)}`,
+    method: 'POST',
+    auditAction: 'task.resume'
+  })
+}
+
+export async function createTask(payload: TaskCreatePayload) {
+  return requestApi<unknown>({
+    path: '/api/tt-register/task/create',
+    method: 'POST',
+    data: payload,
+    auditAction: 'task.create'
+  })
+}
+
+export async function deleteTask(taskId: string) {
+  return requestApi<unknown>({
+    path: `/api/tt-register/task/${encodeURIComponent(taskId)}`,
+    method: 'DELETE',
+    auditAction: 'task.delete'
+  })
 }

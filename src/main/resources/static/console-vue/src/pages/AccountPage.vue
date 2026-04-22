@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import PageBlock from '../components/PageBlock.vue'
+import PageHeader from '../shared/ui/PageHeader.vue'
 import {
   exportAccountList,
   getAccountDateSummary,
@@ -340,12 +341,7 @@ onMounted(() => {
 
 <template>
   <section>
-    <div class="page-head">
-      <div>
-        <h2>账号管理</h2>
-        <p>筛选、分页、导入导出与账号明细</p>
-      </div>
-    </div>
+    <PageHeader title="账号管理" description="筛选、分页、导入导出与账号明细" />
     <PageBlock title="账号筛选">
       <div class="toolbar wrap">
         <el-date-picker v-model="query.startDate" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" />

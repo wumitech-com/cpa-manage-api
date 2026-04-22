@@ -4,9 +4,22 @@ import dayjs from 'dayjs'
 import type { EChartsOption } from 'echarts'
 import StatCard from '../components/StatCard.vue'
 import EChartPanel from '../components/EChartPanel.vue'
-import { getBlockRate, getBlockRateDaily, getBlockRateTrend, type BlockRateDailyItem, type DistItem } from '../api/statsApi'
+import {
+  getBlockRate,
+  getBlockRateMatrix,
+  type BlockRateMatrixRow,
+  type DistItem
+} from '../api/statsApi'
 
 const loading = ref(false)
+const selectedCountry = ref('ALL')
+const countryOptions = [
+  { label: '全部', value: 'ALL' },
+  { label: 'US', value: 'US' },
+  { label: 'MX', value: 'MX' },
+  { label: 'BR', value: 'BR' }
+]
+const matrixOffsets = [1, 3, 7, 14, 21, 30]
 const todayIso = dayjs().format('YYYY-MM-DD')
 const last5StartIso = dayjs().subtract(4, 'day').format('YYYY-MM-DD')
 // 允许用户选择封号率分析的日期范围；默认最近 5 天（start=end-4）
@@ -19,8 +32,7 @@ const data = ref({
   sevenDay: { label: '7天封号率', blockRate: 0, total: 0, blocked: 0, baseDate: '-' }
 })
 const period = ref<'nextDay' | 'threeDay' | 'sevenDay'>('nextDay')
-const trend = ref<Array<{ label?: string; date?: string; blockRate?: number; total?: number; blocked?: number }>>([])
-const dailyMap = ref<Record<string, BlockRateDailyItem>>({})
+const matrixRows = ref<BlockRateMatrixRow[]>([])
 type BlockDetail = {
   androidVersionDist?: DistItem[]
   behaviorDist?: DistItem[]
@@ -51,52 +63,43 @@ const rateServer = computed(() => (currentDetail.value.phoneServerIpRateDist || 
 
 const selectedItem = computed(() => data.value[period.value])
 
-const compareOption = computed<EChartsOption>(() => ({
-  tooltip: { trigger: 'axis' },
-  xAxis: { type: 'category' as const, data: ['次日', '3天', '7天'] },
-  yAxis: { type: 'value' as const },
-  series: [
-    {
-      type: 'bar' as const,
-      data: [
-        data.value.nextDay.blockRate || 0,
-        data.value.threeDay.blockRate || 0,
-        data.value.sevenDay.blockRate || 0
-      ]
-    }
-  ]
-}))
-
-const trendOption = computed<EChartsOption>(() => ({
-  tooltip: { trigger: 'axis' },
-  xAxis: { type: 'category' as const, data: trend.value.map((i) => i.label || i.date || '-') },
-  yAxis: { type: 'value' as const },
-  series: [
-    {
-      name: '封号率',
+const matrixOffsetTrendOption = computed<EChartsOption>(() => {
+  const xData = matrixRows.value.map((row) => toMMDD(row.rowDate))
+  const offsets = matrixOffsets
+  const series = offsets.map((off) => {
+    const data = matrixRows.value.map((row) => {
+      const cell = (row.cells || []).find((c) => Number(c.offset) === off)
+      return Number(cell?.blockRateAsOfRow || 0)
+    })
+    return {
+      name: `前${off}天`,
       type: 'line' as const,
       smooth: true,
-      data: trend.value.map((i) => i.blockRate || 0)
+      data
     }
-  ]
-}))
+  })
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: offsets.map((off) => `前${off}天`) },
+    xAxis: { type: 'category' as const, data: xData },
+    yAxis: { type: 'value' as const, axisLabel: { formatter: '{value}%' } },
+    series
+  }
+})
+
 
 async function loadData() {
   loading.value = true
   try {
     const start = queryStartDate.value
     const end = queryEndDate.value
-    const rangeLen =
-      start && end && !dayjs(start).isAfter(dayjs(end))
-        ? dayjs(end).diff(dayjs(start), 'day') + 1
-        : 1
-    const backOffsetsMax = Math.max(...backOffsets)
-    const dailyDaysNeeded = Math.max(1, rangeLen) + backOffsetsMax
+    const ctry = selectedCountry.value
 
-    const [res, tr, daily] = await Promise.all([
-      getBlockRate(queryEndDate.value),
-      getBlockRateTrend(queryEndDate.value),
-      getBlockRateDaily(queryEndDate.value, dailyDaysNeeded)
+    const [res, mx] = await Promise.all([
+      getBlockRate(queryEndDate.value, ctry),
+      start && end && !dayjs(start).isAfter(dayjs(end))
+        ? getBlockRateMatrix(start, end, ctry)
+        : Promise.resolve({ success: false as const })
     ])
     if (res?.success && res.data) {
       data.value = {
@@ -107,12 +110,7 @@ async function loadData() {
       detailByPeriod.value = res.data.blockedDetailByPeriod || {}
       detailFallback.value = res.data.blockedDetail || {}
     }
-    trend.value = tr?.success && tr.data?.trend ? tr.data.trend : []
-    if (daily?.success && daily.data?.daily) {
-      dailyMap.value = Object.fromEntries(daily.data.daily.map((i) => [i.date, i]))
-    } else {
-      dailyMap.value = {}
-    }
+    matrixRows.value = mx?.success && mx.data?.rows ? mx.data.rows : []
   } finally {
     loading.value = false
   }
@@ -129,16 +127,6 @@ function toMMDD(v?: string) {
   return dayjs(v).format('MMDD')
 }
 
-function getDailyByDate(dateStr?: string) {
-  if (!dateStr) return undefined
-  return dailyMap.value[dateStr]
-}
-
-function calcBackISO(rowDate?: string, offsetDays?: number) {
-  if (!rowDate || !offsetDays) return undefined
-  return dayjs(rowDate).subtract(offsetDays, 'day').format('YYYY-MM-DD')
-}
-
 function setToday() {
   const v = dayjs().format('YYYY-MM-DD')
   const start = dayjs().subtract(4, 'day').format('YYYY-MM-DD')
@@ -149,29 +137,6 @@ function setToday() {
 function riskClass(rate?: number) {
   return Number(rate || 0) >= 30 ? 'risk-alert' : ''
 }
-
-const descDate1 = computed(() => dayjs(queryEndDate.value).subtract(1, 'day').format('M月D日'))
-const descDate3 = computed(() => dayjs(queryEndDate.value).subtract(3, 'day').format('M月D日'))
-const descDate7 = computed(() => dayjs(queryEndDate.value).subtract(7, 'day').format('M月D日'))
-
-const backOffsets = [3, 7, 14, 21, 30]
-
-const matrixRows = computed(() => {
-  const start = queryStartDate.value
-  const end = queryEndDate.value
-  if (!start || !end) return []
-  const s = dayjs(start)
-  const e = dayjs(end)
-  if (s.isAfter(e)) return []
-
-  const days = e.diff(s, 'day')
-  const rows: Array<{ date: string; blockRate?: number }> = []
-  for (let i = 0; i <= days; i++) {
-    const d = s.add(i, 'day').format('YYYY-MM-DD')
-    rows.push({ date: d, blockRate: dailyMap.value[d]?.blockRate })
-  }
-  return rows
-})
 
 onMounted(loadData)
 </script>
@@ -184,6 +149,9 @@ onMounted(loadData)
         <p>关键周期风险指标与趋势对比</p>
       </div>
       <div class="toolbar">
+        <el-select v-model="selectedCountry" style="width: 110px" @change="loadData">
+          <el-option v-for="o in countryOptions" :key="o.value" :label="o.label" :value="o.value" />
+        </el-select>
         <el-button type="primary" :loading="loading" @click="loadData">刷新</el-button>
       </div>
     </div>
@@ -200,9 +168,34 @@ onMounted(loadData)
       </div>
     </div>
 
-    <div class="card page-block cohort-matrix" v-if="matrixRows.length">
-      <div class="panel-title">回溯周期封号率矩阵（注册前 3/7/14/21/30 天）</div>
+    <div class="card page-block" v-if="matrixRows.length">
+      <div class="panel-title">回溯周期封号率趋势（多线）</div>
       <div class="toolbar wrap" style="margin-bottom: 10px; margin-top: 8px">
+        <el-select v-model="selectedCountry" style="width: 120px" @change="loadData">
+          <el-option v-for="o in countryOptions" :key="`trend-${o.value}`" :label="`国家：${o.label}`" :value="o.value" />
+        </el-select>
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD"
+          :clearable="false"
+          @change="loadData"
+        />
+        <el-button @click="setToday">最近5天</el-button>
+        <el-button type="primary" :loading="loading" @click="loadData">刷新</el-button>
+      </div>
+      <EChartPanel title="多周期趋势线（D1/D3/D7/D14/D21/D30）" :option="matrixOffsetTrendOption" :height="320" />
+    </div>
+
+    <div class="card page-block cohort-matrix" v-if="matrixRows.length">
+      <div class="panel-title">回溯周期封号率矩阵（注册前 1/3/7/14/21/30 天）</div>
+      <div class="toolbar wrap" style="margin-bottom: 10px; margin-top: 8px">
+        <el-select v-model="selectedCountry" style="width: 120px" @change="loadData">
+          <el-option v-for="o in countryOptions" :key="`mx-${o.value}`" :label="`国家：${o.label}`" :value="o.value" />
+        </el-select>
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -217,26 +210,19 @@ onMounted(loadData)
         <el-button type="primary" :loading="loading" @click="loadData">刷新</el-button>
       </div>
       <div class="matrix-wrap">
-        <div v-for="row in matrixRows" :key="`row-${row.date}`" class="matrix-row">
-          <div class="matrix-row-title">
-            {{ toMMDD(row.date) }}
-          </div>
-          <div class="matrix-grid">
-            <div v-for="offset in backOffsets" :key="`off-${row.date}-${offset}`" class="matrix-cell">
-              <div class="matrix-cell-head">
-                {{ toMMDD(calcBackISO(row.date, offset)) }}（注册 {{ getDailyByDate(calcBackISO(row.date, offset))?.total || 0 }}）
-              </div>
-              <div class="matrix-cell-body">
-                {{ fmtRate(getDailyByDate(calcBackISO(row.date, offset))?.blockRate) }}%
-              </div>
-            </div>
+        <div class="matrix-header">
+          <div class="matrix-head-title">注册日期</div>
+          <div v-for="off in matrixOffsets" :key="`h-${off}`" class="matrix-head-cell">前{{ off }}天</div>
+        </div>
+        <div v-for="row in matrixRows" :key="`row-${row.rowDate}`" class="matrix-row">
+          <div class="matrix-row-title">{{ toMMDD(row.rowDate) }}</div>
+          <div v-for="cell in row.cells" :key="`off-${row.rowDate}-${cell.offset}`" class="matrix-cell">
+            <div class="matrix-cell-head">{{ toMMDD(cell.cohortDate) }}（{{ cell.total }}）</div>
+            <div class="matrix-cell-body">{{ fmtRate(cell.blockRateAsOfRow) }}%</div>
           </div>
         </div>
       </div>
     </div>
-
-    <EChartPanel title="周期封号率对比" :option="compareOption" :height="360" />
-    <EChartPanel title="最近7天封号率趋势" :option="trendOption" :height="320" />
 
     <div class="card page-block">
       <div class="panel-title">封号分布（按周期）</div>
@@ -333,9 +319,10 @@ onMounted(loadData)
     <div class="card page-block">
       <div class="panel-title">说明</div>
       <p class="block-desc">
-        - 次日封号率：昨日（{{ descDate1 }}）2FA 设置成功账号，当前被封比例。<br>
-        - 3天封号率：3天前（{{ descDate3 }}）2FA 设置成功账号，当前被封比例。<br>
-        - 7天封号率：7天前（{{ descDate7 }}）2FA 设置成功账号，当前被封比例。
+        - 观察截止日为日期范围<strong>结束日</strong>当天 23:59:59；卡片与趋势分子均为「block_time 非空且不晚于该时刻」。<br>
+        - 次日 / 3 天 / 7 天：cohort 分别为结束日前 1 / 3 / 7 个自然日完成 2FA 的账号。<br>
+        - 矩阵：每行日期视为注册日；列分别回看注册前 1/3/7/14/21/30 天 cohort 的封号率。<br>
+        - 国家选「全部」时不按国家过滤；选具体国家时仅统计该国记录。
       </p>
     </div>
   </section>
@@ -396,33 +383,51 @@ onMounted(loadData)
 
 .matrix-wrap {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   max-height: 520px;
   overflow: auto;
   padding-right: 4px;
 }
 
+.matrix-header {
+  display: grid;
+  grid-template-columns: 96px repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-card, #fff);
+  padding-bottom: 2px;
+}
+
+.matrix-head-title,
+.matrix-head-cell {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-weak);
+  text-align: center;
+}
+
 .matrix-row {
   display: grid;
-  grid-template-columns: 170px 1fr;
-  align-items: start;
-  gap: 14px;
+  grid-template-columns: 96px repeat(6, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 8px;
   background: rgba(148, 163, 184, 0.05);
 }
 
 .matrix-row-title {
   font-weight: 700;
-  line-height: 1.3;
-  word-break: break-word;
-}
-
-.matrix-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .matrix-cell {
@@ -433,16 +438,16 @@ onMounted(loadData)
 }
 
 .matrix-cell-head {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-weak);
   line-height: 1.2;
-  word-break: break-word;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .matrix-cell-body {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.1;
 }
 
 @media (max-width: 1200px) {
@@ -452,10 +457,6 @@ onMounted(loadData)
 
   .matrix-row {
     grid-template-columns: 1fr;
-  }
-
-  .matrix-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>
