@@ -718,6 +718,12 @@ public class TtRegisterController {
         return ttRegisterService.updateTaskConfig(request);
     }
 
+    @PostMapping("/task/create")
+    public Map<String, Object> createTask(@RequestBody Map<String, Object> request) {
+        log.info("手工新增任务请求: {}", request);
+        return ttRegisterService.createTask(request);
+    }
+
     /**
      * 立即刷新任务配置缓存，使正在运行的任务下一循环即可读到最新配置。
      * 直接改库后调此接口可跳过 5 分钟 TTL 立即生效。

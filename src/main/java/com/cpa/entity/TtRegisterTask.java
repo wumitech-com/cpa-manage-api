@@ -145,6 +145,13 @@ public class TtRegisterTask {
     private String appiumServer;
 
     /**
+     * Xray服务器地址（用于TTFarmResetPhone与MX动态代理调整）
+     */
+    @TableField("xray_server_ip")
+    @Column(name = "xray_server_ip", length = 50)
+    private String xrayServerIp;
+
+    /**
      * 任务状态：PENDING-待执行, RUNNING-运行中, COMPLETED-已完成, FAILED-失败, STOPPED-已停止
      */
     @TableField("status")

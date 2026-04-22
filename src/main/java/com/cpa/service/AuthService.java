@@ -83,5 +83,20 @@ public class AuthService {
             sessions.remove(token);
         }
     }
+
+    public String getUsernameByToken(String token) {
+        if (token == null || token.isBlank()) {
+            return "";
+        }
+        SessionInfo info = sessions.get(token);
+        if (info == null) {
+            return "";
+        }
+        if (info.expireAtEpochSec < Instant.now().getEpochSecond()) {
+            sessions.remove(token);
+            return "";
+        }
+        return info.username;
+    }
 }
 

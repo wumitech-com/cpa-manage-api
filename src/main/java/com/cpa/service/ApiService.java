@@ -149,6 +149,9 @@ public class ApiService {
      *
      * 实际调用方式与后端一致：所有参数通过 query 传递，body 为空 text/plain。
      */
+    /**
+     * @param dynamicIpChannelQueue 动态 IP 渠道候选队列，逗号分隔；非空时作为 query 参数 dynamic_ip_channel_queue 传递
+     */
     public Map<String, Object> ttFarmResetPhone(String phoneId,
                                                 String phoneServerIp,
                                                 String xrayServerIp,
@@ -156,10 +159,11 @@ public class ApiService {
                                                 String sdk,
                                                 String imagePath,
                                                 String dynamicIpChannel,
-                                                boolean fastSwitch) {
+                                                boolean fastSwitch,
+                                                String dynamicIpChannelQueue) {
         try {
-            log.info("调用TTFarmResetPhone API: phoneId={}, phoneServerIp={}, xrayServerIp={}, country={}, sdk={}, imagePath={}, dynamicIpChannel={}, fastSwitch={}",
-                    phoneId, phoneServerIp, xrayServerIp, country, sdk, imagePath, dynamicIpChannel, fastSwitch);
+            log.info("调用TTFarmResetPhone API: phoneId={}, phoneServerIp={}, xrayServerIp={}, country={}, sdk={}, imagePath={}, dynamicIpChannel={}, fastSwitch={}, dynamicIpChannelQueue={}",
+                    phoneId, phoneServerIp, xrayServerIp, country, sdk, imagePath, dynamicIpChannel, fastSwitch, dynamicIpChannelQueue);
 
             HttpUrl.Builder urlBuilder = HttpUrl.parse(baseUrl + "/TTFarmResetPhone").newBuilder();
             urlBuilder.addQueryParameter("phone_id", phoneId);
@@ -172,6 +176,9 @@ public class ApiService {
             urlBuilder.addQueryParameter("image_path", imagePath);
             urlBuilder.addQueryParameter("dynamic_ip_channel", dynamicIpChannel);
             urlBuilder.addQueryParameter("fast_switch", String.valueOf(fastSwitch));
+            if (dynamicIpChannelQueue != null && !dynamicIpChannelQueue.isEmpty()) {
+                urlBuilder.addQueryParameter("dynamic_ip_channel_queue", dynamicIpChannelQueue);
+            }
 
             String url = urlBuilder.build().toString();
             log.debug("TTFarmResetPhone请求URL: {}", url);

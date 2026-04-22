@@ -66,6 +66,15 @@ public interface TtRegisterTaskRepository extends BaseMapper<TtRegisterTask> {
         wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
         return selectList(wrapper);
     }
+
+    default TtRegisterTask findByPhoneIdAndStatusIn(String phoneId, List<String> statuses) {
+        LambdaQueryWrapper<TtRegisterTask> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TtRegisterTask::getPhoneId, phoneId);
+        wrapper.in(TtRegisterTask::getStatus, statuses);
+        wrapper.orderByDesc(TtRegisterTask::getCreatedAt);
+        wrapper.last("LIMIT 1");
+        return selectOne(wrapper);
+    }
     
     /**
      * 根据服务器IP查询任务列表
@@ -169,5 +178,48 @@ public interface TtRegisterTaskRepository extends BaseMapper<TtRegisterTask> {
     long countTasks(@Param("taskId") String taskId,
                      @Param("status") String status,
                      @Param("serverIp") String serverIp);
+
+    @Select("SELECT DISTINCT phone_id FROM tt_register_task WHERE server_ip = #{serverIp} AND phone_id IS NOT NULL AND phone_id != '' ORDER BY phone_id")
+    List<String> listDistinctPhoneIdsByServerIp(@Param("serverIp") String serverIp);
+
+    @Select("SELECT COUNT(*) FROM tt_register_task WHERE server_ip = #{serverIp} AND status IN ('PENDING','RUNNING')")
+    long countInFlightByServerIp(@Param("serverIp") String serverIp);
+
+    @Select("SELECT DISTINCT phone_id FROM tt_register_task WHERE server_ip = #{serverIp} AND status IN ('PENDING','RUNNING') AND phone_id IS NOT NULL AND phone_id != ''")
+    List<String> listInFlightPhoneIdsByServerIp(@Param("serverIp") String serverIp);
+
+    @Select("<script>" +
+            "SELECT * FROM tt_register_task " +
+            "WHERE task_kind = 'REGISTER' " +
+            "AND (device_type = 'CLOUD_PHONE' OR device_type IS NULL) " +
+            "<if test='statuses != null and statuses.size() > 0'> " +
+            "AND status IN " +
+            "<foreach collection='statuses' item='s' open='(' separator=',' close=')'>#{s}</foreach> " +
+            "</if>" +
+            "<if test='serverIp != null and serverIp != \"\"'> AND server_ip = #{serverIp} </if>" +
+            "<if test='phoneId != null and phoneId != \"\"'> AND phone_id LIKE CONCAT('%', #{phoneId}, '%') </if>" +
+            "ORDER BY updated_at DESC " +
+            "LIMIT #{limit} OFFSET #{offset}" +
+            "</script>")
+    List<TtRegisterTask> listDispatchCandidates(@Param("statuses") List<String> statuses,
+                                                @Param("serverIp") String serverIp,
+                                                @Param("phoneId") String phoneId,
+                                                @Param("limit") int limit,
+                                                @Param("offset") int offset);
+
+    @Select("<script>" +
+            "SELECT COUNT(*) FROM tt_register_task " +
+            "WHERE task_kind = 'REGISTER' " +
+            "AND (device_type = 'CLOUD_PHONE' OR device_type IS NULL) " +
+            "<if test='statuses != null and statuses.size() > 0'> " +
+            "AND status IN " +
+            "<foreach collection='statuses' item='s' open='(' separator=',' close=')'>#{s}</foreach> " +
+            "</if>" +
+            "<if test='serverIp != null and serverIp != \"\"'> AND server_ip = #{serverIp} </if>" +
+            "<if test='phoneId != null and phoneId != \"\"'> AND phone_id LIKE CONCAT('%', #{phoneId}, '%') </if>" +
+            "</script>")
+    long countDispatchCandidates(@Param("statuses") List<String> statuses,
+                                 @Param("serverIp") String serverIp,
+                                 @Param("phoneId") String phoneId);
 }
 

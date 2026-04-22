@@ -63,7 +63,7 @@ public interface TtAccountRegisterRepository extends BaseMapper<TtAccountRegiste
      * 指定日期 2FA 设置成功的账号总数（is_2fa_setup_success=1, created_at 在该日）
      */
     @Select("SELECT COUNT(*) FROM tt_account_register " +
-            "WHERE created_at >= #{start} AND created_at <= #{end} AND is_2fa_setup_success = 1")
+            "WHERE created_at >= #{start} AND created_at <= #{end} AND register_success = 1")
     long count2faSuccessByDate(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     /**
@@ -86,8 +86,46 @@ public interface TtAccountRegisterRepository extends BaseMapper<TtAccountRegiste
      * 指定日期 2FA 设置成功且已封号数（block_time IS NOT NULL）
      */
     @Select("SELECT COUNT(*) FROM tt_account_register " +
-            "WHERE created_at >= #{start} AND created_at <= #{end} AND is_2fa_setup_success = 1 AND block_time IS NOT NULL")
+            "WHERE created_at >= #{start} AND created_at <= #{end} AND register_success = 1 AND block_time IS NOT NULL")
     long countBlockedByDate(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    /**
+     * cohort 日 2FA 成功数；{@code country} 为 null 时不按国家过滤（与 ALL 一致）
+     */
+    @Select("<script>" +
+            "SELECT COUNT(*) FROM tt_account_register " +
+            "WHERE created_at &gt;= #{start} AND created_at &lt;= #{end} AND register_success = 1 " +
+            "<if test='country != null'>AND UPPER(TRIM(country)) = UPPER(TRIM(#{country})) </if>" +
+            "</script>")
+    long count2faSuccessByDateRangeAndCountry(@Param("start") LocalDateTime start,
+                                              @Param("end") LocalDateTime end,
+                                              @Param("country") String country);
+
+    /**
+     * cohort 日内 2FA 成功且截至 {@code blockTimeLe}（含）已封号
+     */
+    @Select("<script>" +
+            "SELECT COUNT(*) FROM tt_account_register " +
+            "WHERE created_at &gt;= #{cohortStart} AND created_at &lt;= #{cohortEnd} " +
+            "AND register_success = 1 AND block_time IS NOT NULL AND block_time &lt;= #{blockTimeLe} " +
+            "<if test='country != null'>AND UPPER(TRIM(country)) = UPPER(TRIM(#{country})) </if>" +
+            "</script>")
+    long count2faBlockedByDateRangeAndCountryAndBlockTimeLe(@Param("cohortStart") LocalDateTime cohortStart,
+                                                            @Param("cohortEnd") LocalDateTime cohortEnd,
+                                                            @Param("blockTimeLe") LocalDateTime blockTimeLe,
+                                                            @Param("country") String country);
+
+    /**
+     * cohort 日内 2FA 成功账号列表；{@code country} 为 null 时不按国家过滤
+     */
+    @Select("<script>" +
+            "SELECT * FROM tt_account_register " +
+            "WHERE created_at &gt;= #{start} AND created_at &lt;= #{end} AND register_success = 1 " +
+            "<if test='country != null'>AND UPPER(TRIM(country)) = UPPER(TRIM(#{country})) </if>" +
+            "</script>")
+    List<TtAccountRegister> list2faSuccessByDateRangeAndCountry(@Param("start") LocalDateTime start,
+                                                                  @Param("end") LocalDateTime end,
+                                                                  @Param("country") String country);
 
     /**
      * 统计最近 N 天每日数据：注册数、2FA成功数、留存数

@@ -105,24 +105,47 @@ public class StatisticsController {
 
     /**
      * 获取封号率统计（次日、3天、7天）
-     * @param date 可选，查询基准日 yyyy-MM-dd，不传则默认今天
+     * @param date 可选，观察截止日 yyyy-MM-dd，不传则默认今天
+     * @param country 可选，国家；不传或 ALL 表示全量
      */
     @GetMapping("/block-rate")
-    public Map<String, Object> getBlockRateStatistics(@RequestParam(required = false) String date) {
-        log.info("获取封号率统计, date={}", date);
+    public Map<String, Object> getBlockRateStatistics(@RequestParam(required = false) String date,
+                                                      @RequestParam(required = false) String country) {
+        log.info("获取封号率统计, date={}, country={}", date, country);
         LocalDate queryDate = parseDate(date);
-        return statisticsService.getBlockRateStatistics(queryDate);
+        return statisticsService.getBlockRateStatistics(queryDate, country);
     }
 
     /**
-     * 获取封号率最近7天趋势（与上面的卡片无强关联）
-     * @param date 可选，作为“今天”的参考 yyyy-MM-dd，不传则默认今天
+     * 获取封号率最近7天趋势（各 cohort 截至 date 当日结束的封号率）
+     * @param date 可选，观察截止日 yyyy-MM-dd，不传则默认今天
+     * @param country 可选，国家；不传或 ALL 表示全量
      */
     @GetMapping("/block-rate-trend")
-    public Map<String, Object> getBlockRateTrend(@RequestParam(required = false) String date) {
-        log.info("获取封号率趋势统计, date={}", date);
+    public Map<String, Object> getBlockRateTrend(@RequestParam(required = false) String date,
+                                                 @RequestParam(required = false) String country) {
+        log.info("获取封号率趋势统计, date={}, country={}", date, country);
         LocalDate queryDate = parseDate(date);
-        return statisticsService.getBlockRateTrend(queryDate);
+        return statisticsService.getBlockRateTrend(queryDate, country);
+    }
+
+    /**
+     * 封号率回溯矩阵：每行观察日、每格 cohort = 行日 - offset
+     */
+    @GetMapping("/block-rate-matrix")
+    public Map<String, Object> getBlockRateMatrix(@RequestParam String start,
+                                                    @RequestParam String end,
+                                                    @RequestParam(required = false) String country) {
+        log.info("获取封号率矩阵, start={}, end={}, country={}", start, end, country);
+        LocalDate rangeStart = parseDate(start);
+        LocalDate rangeEnd = parseDate(end);
+        if (rangeStart == null || rangeEnd == null) {
+            Map<String, Object> err = new java.util.HashMap<>();
+            err.put("success", false);
+            err.put("message", "start 与 end 必填，格式 yyyy-MM-dd");
+            return err;
+        }
+        return statisticsService.getBlockRateMatrix(rangeStart, rangeEnd, country);
     }
 
     /**

@@ -145,11 +145,11 @@ public class TtRegisterService {
     // 默认4：对应每台服务器平均每15秒一个Reset，与耗时3~5分钟+5并发上限匹配
     @Value("${tt-register.reset-rate-per-minute-per-server:4.0}")
     private double resetRatePerMinutePerServer;
-    // 为每个服务器创建独立的信号量（并发上限），不同服务器的调用可以并行
+    // 为每个服务器创建独立的信号量（并发控制），不同服务器的调用可以并行
     private final ConcurrentHashMap<String, Semaphore> resetPhoneEnvSemaphores = new ConcurrentHashMap<>();
     // 为每个服务器创建独立的令牌桶（速率控制），均匀分散Reset请求，避免突发冲击Docker
     private final ConcurrentHashMap<String, RateLimiter> resetPhoneEnvRateLimiters = new ConcurrentHashMap<>();
-    
+
     // 5. Appium服务器端口池（用于随机选择，避免单点瓶颈）
     // 根据实际运行的Appium服务器端口范围定义（4723-4781）
     private static final int[] APPIUM_PORTS = {
@@ -263,6 +263,7 @@ public class TtRegisterService {
             }
             TtRegisterTask latest = opt.get();
             Map<String, String> params = new HashMap<>();
+            if (latest.getTaskId() != null) params.put("taskId", latest.getTaskId());
             if (latest.getCountry() != null) params.put("country", latest.getCountry());
             if (latest.getSdk() != null) params.put("sdk", latest.getSdk());
             if (latest.getImagePath() != null) params.put("imagePath", latest.getImagePath());
@@ -271,11 +272,20 @@ public class TtRegisterService {
             if (latest.getStaticIpChannel() != null) params.put("staticIpChannel", latest.getStaticIpChannel());
             if (latest.getBiz() != null) params.put("biz", latest.getBiz());
             if (latest.getAppiumServer() != null) params.put("appiumServer", latest.getAppiumServer());
+            if (latest.getXrayServerIp() != null) params.put("xrayServerIp", latest.getXrayServerIp());
+            if (latest.getTaskType() != null) params.put("taskType", latest.getTaskType());
             return params;
         } catch (Exception e) {
             log.warn("任务 {} 读取配置缓存失败，使用原始参数: {}", taskId, e.getMessage());
             return fallbackParams;
         }
+    }
+
+    private String resolveEmailMode(String taskType, String taskId) {
+        if ("FAKE_EMAIL".equals(taskType)) return "random";
+        if ("REAL_EMAIL".equals(taskType)) return "outlook";
+        log.error("未知的任务类型: taskId={}, taskType={}", taskId, taskType);
+        return "random";
     }
 
     /**
@@ -318,11 +328,43 @@ public class TtRegisterService {
         // 将 androidXX_ 替换成目标版本
         return imagePath.replaceAll("android\\d+_", target);
     }
+
+    /**
+     * TTFarmResetPhone 要求：请求里的 {@code dynamic_ip_channel} 必须是 {@code dynamic_ip_channel_queue} 中的某一项。
+     * 任务表可能配置任意渠道（如 ppfly），若不在队列中则插入队首，避免 code=20 校验失败。
+     */
+    private static String mergeDynamicIpChannelIntoQueue(String dynamicIpChannel, String queueCsv) {
+        if (queueCsv == null || queueCsv.isBlank()) {
+            return (dynamicIpChannel == null || dynamicIpChannel.isBlank()) ? "" : dynamicIpChannel.trim();
+        }
+        String ch = (dynamicIpChannel == null || dynamicIpChannel.isBlank()) ? "" : dynamicIpChannel.trim();
+        List<String> parts = new ArrayList<>();
+        for (String p : queueCsv.split(",")) {
+            String t = p == null ? "" : p.trim();
+            if (!t.isEmpty()) {
+                parts.add(t);
+            }
+        }
+        if (ch.isEmpty()) {
+            return String.join(",", parts);
+        }
+        if (parts.contains(ch)) {
+            return String.join(",", parts);
+        }
+        List<String> merged = new ArrayList<>();
+        merged.add(ch);
+        for (String p : parts) {
+            if (!ch.equals(p)) {
+                merged.add(p);
+            }
+        }
+        return String.join(",", merged);
+    }
     
     /**
-     * 获取指定服务器的ResetPhoneEnv调用信号量（并发上限）
+     * 获取指定服务器的ResetPhoneEnv信号量（并发控制）
      * @param serverIp 服务器IP
-     * @return 信号量
+     * @return Semaphore
      */
     private Semaphore getResetPhoneEnvSemaphore(String serverIp) {
         return resetPhoneEnvSemaphores.computeIfAbsent(serverIp,
@@ -339,7 +381,7 @@ public class TtRegisterService {
         return resetPhoneEnvRateLimiters.computeIfAbsent(serverIp,
             k -> RateLimiter.create(resetRatePerMinutePerServer / 60.0));
     }
-    
+
     /**
      * 定时任务：每1分钟查询并执行待执行的任务
      */
@@ -438,6 +480,7 @@ public class TtRegisterService {
                         
                         // 构建 resetParams Map
                         Map<String, String> resetParams = new HashMap<>();
+                        resetParams.put("taskId", finalTask.getTaskId());
                         if (finalTask.getCountry() != null) resetParams.put("country", finalTask.getCountry());
                         if (finalTask.getSdk() != null) resetParams.put("sdk", finalTask.getSdk());
                         if (finalTask.getImagePath() != null) resetParams.put("imagePath", finalTask.getImagePath());
@@ -446,6 +489,7 @@ public class TtRegisterService {
                         if (finalTask.getStaticIpChannel() != null) resetParams.put("staticIpChannel", finalTask.getStaticIpChannel());
                         if (finalTask.getBiz() != null) resetParams.put("biz", finalTask.getBiz());
                         if (finalTask.getAppiumServer() != null) resetParams.put("appiumServer", finalTask.getAppiumServer());
+                        if (finalTask.getXrayServerIp() != null) resetParams.put("xrayServerIp", finalTask.getXrayServerIp());
                         
                         // 根据任务类型确定 emailMode
                         String emailMode;
@@ -725,6 +769,7 @@ public class TtRegisterService {
             task.setDynamicIpChannel(resetParams.getOrDefault("dynamicIpChannel", ""));
             task.setStaticIpChannel(resetParams.getOrDefault("staticIpChannel", ""));
             task.setBiz(resetParams.getOrDefault("biz", ""));
+            task.setXrayServerIp(resetParams.getOrDefault("xrayServerIp", ""));
             // 设置device_type（如果提供）
             String deviceType = resetParams.getOrDefault("deviceType", "");
             if (deviceType != null && !deviceType.isEmpty()) {
@@ -827,6 +872,7 @@ public class TtRegisterService {
                             
                             // 构建 resetParams Map
                             Map<String, String> resetParams = new HashMap<>();
+                            resetParams.put("taskId", finalTask.getTaskId());
                             if (finalTask.getCountry() != null) resetParams.put("country", finalTask.getCountry());
                             if (finalTask.getSdk() != null) resetParams.put("sdk", finalTask.getSdk());
                             if (finalTask.getImagePath() != null) resetParams.put("imagePath", finalTask.getImagePath());
@@ -835,6 +881,7 @@ public class TtRegisterService {
                             if (finalTask.getStaticIpChannel() != null) resetParams.put("staticIpChannel", finalTask.getStaticIpChannel());
                             if (finalTask.getBiz() != null) resetParams.put("biz", finalTask.getBiz());
                             if (finalTask.getAppiumServer() != null) resetParams.put("appiumServer", finalTask.getAppiumServer());
+                            if (finalTask.getXrayServerIp() != null) resetParams.put("xrayServerIp", finalTask.getXrayServerIp());
                             
                             // 根据任务类型确定 emailMode
                             String emailMode;
@@ -1074,13 +1121,14 @@ public class TtRegisterService {
 
                     // 每轮从缓存读取最新配置，支持热更新（TTL 5分钟，updateTaskConfig/refreshTaskConfig 可立即失效）
                     Map<String, String> currentResetParams = getLatestResetParams(task.getTaskId(), resetParams);
+                    String currentEmailMode = resolveEmailMode(currentResetParams.getOrDefault("taskType", task.getTaskType()), task.getTaskId());
 
                     log.info("任务 {} - 设备 {} 第 {} 轮注册", task.getTaskId(), phoneId, round);
 
                     // 调用注册流程（包含 ResetPhoneEnv + 安装APK + 执行注册脚本）
                     String result;
                     try {
-                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, round, 0, tiktokVersionDir, currentResetParams, emailMode);
+                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, round, 0, tiktokVersionDir, currentResetParams, currentEmailMode);
                     } catch (Exception e) {
                         log.error("任务 {} - 设备 {} 第 {} 轮注册时发生未捕获异常", task.getTaskId(), phoneId, round, e);
                         result = "FAILED: 注册流程异常 - " + e.getMessage();
@@ -1133,13 +1181,14 @@ public class TtRegisterService {
 
                     // 每轮从缓存读取最新配置，支持热更新（TTL 5分钟，updateTaskConfig/refreshTaskConfig 可立即失效）
                     Map<String, String> currentResetParams = getLatestResetParams(task.getTaskId(), resetParams);
+                    String currentEmailMode = resolveEmailMode(currentResetParams.getOrDefault("taskType", task.getTaskType()), task.getTaskId());
 
                     log.info("任务 {} - 设备 {} 注册进度: {}/{}", task.getTaskId(), phoneId, i, targetCount);
 
                     // 调用注册流程（包含 ResetPhoneEnv + 安装APK + 执行注册脚本）
                     String result;
                     try {
-                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, i, targetCount, tiktokVersionDir, currentResetParams, emailMode);
+                        result = registerSingleDeviceWithoutStart(phoneId, serverIp, i, targetCount, tiktokVersionDir, currentResetParams, currentEmailMode);
                     } catch (Exception e) {
                         log.error("任务 {} - 设备 {} 第 {} 个账号注册时发生未捕获异常", task.getTaskId(), phoneId, i, e);
                         result = "FAILED: 注册流程异常 - " + e.getMessage();
@@ -1179,6 +1228,7 @@ public class TtRegisterService {
             if (syncStoppedFromDb(task)) {
                 ttRegisterTaskRepository.updateById(task);
             } else {
+                task.setStatus("PENDING");
                 task.setUpdatedAt(LocalDateTime.now());
                 ttRegisterTaskRepository.updateById(task);
             }
@@ -2361,6 +2411,7 @@ public class TtRegisterService {
         if (req.containsKey("gaidTag")) task.setGaidTag((String) req.get("gaidTag"));
         if (req.containsKey("dynamicIpChannel")) task.setDynamicIpChannel((String) req.get("dynamicIpChannel"));
         if (req.containsKey("staticIpChannel")) task.setStaticIpChannel((String) req.get("staticIpChannel"));
+        if (req.containsKey("xrayServerIp")) task.setXrayServerIp((String) req.get("xrayServerIp"));
         if (req.containsKey("biz")) task.setBiz((String) req.get("biz"));
         if (req.containsKey("targetCount")) {
             Object v = req.get("targetCount");
@@ -2382,6 +2433,80 @@ public class TtRegisterService {
         res.put("message", "任务配置已更新");
         res.put("taskId", taskId);
         return res;
+    }
+
+    /**
+     * 手工新增任务（云手机管理页）
+     */
+    public Map<String, Object> createTask(Map<String, Object> req) {
+        try {
+            String taskType = req.get("taskType") == null ? null : String.valueOf(req.get("taskType")).trim();
+            String serverIp = req.get("serverIp") == null ? null : String.valueOf(req.get("serverIp")).trim();
+            String phoneId = req.get("phoneId") == null ? null : String.valueOf(req.get("phoneId")).trim();
+            if (taskType == null || taskType.isEmpty()) {
+                return Map.of("success", false, "message", "taskType 不能为空");
+            }
+            if (!"FAKE_EMAIL".equals(taskType) && !"REAL_EMAIL".equals(taskType)) {
+                return Map.of("success", false, "message", "taskType 仅支持 FAKE_EMAIL/REAL_EMAIL");
+            }
+            if (serverIp == null || serverIp.isEmpty()) {
+                return Map.of("success", false, "message", "serverIp 不能为空");
+            }
+            if (phoneId == null || phoneId.isEmpty()) {
+                return Map.of("success", false, "message", "phoneId 不能为空");
+            }
+
+            TtRegisterTask existed = ttRegisterTaskRepository.findByPhoneIdAndStatusIn(phoneId, Arrays.asList("PENDING", "RUNNING"));
+            if (existed != null) {
+                return Map.of("success", false, "message", "该云手机已有进行中的任务: " + existed.getTaskId());
+            }
+
+            TtRegisterTask task = new TtRegisterTask();
+            task.setTaskId("manual-" + UUID.randomUUID());
+            task.setTaskType(taskType);
+            task.setTaskKind("REGISTER");
+            task.setDeviceType("CLOUD_PHONE");
+            task.setServerIp(serverIp);
+            task.setPhoneId(phoneId);
+            task.setTargetCount(parseInteger(req.get("targetCount"), 1));
+            task.setTiktokVersionDir(asNullableString(req.get("tiktokVersionDir")));
+            task.setCountry(asNullableString(req.get("country")));
+            task.setSdk(asNullableString(req.get("sdk")));
+            task.setImagePath(asNullableString(req.get("imagePath")));
+            task.setGaidTag(asNullableString(req.get("gaidTag")));
+            task.setDynamicIpChannel(asNullableString(req.get("dynamicIpChannel")));
+            task.setStaticIpChannel(asNullableString(req.get("staticIpChannel")));
+            task.setBiz(asNullableString(req.get("biz")));
+            task.setAppiumServer(asNullableString(req.get("appiumServer")));
+            task.setXrayServerIp(asNullableString(req.get("xrayServerIp")));
+            task.setStatus("PENDING");
+            LocalDateTime now = LocalDateTime.now();
+            task.setCreatedAt(now);
+            task.setUpdatedAt(now);
+            ttRegisterTaskRepository.insert(task);
+            return Map.of("success", true, "message", "任务创建成功", "taskId", task.getTaskId());
+        } catch (Exception e) {
+            log.error("手工新增任务异常", e);
+            return Map.of("success", false, "message", "新增任务失败: " + e.getMessage());
+        }
+    }
+
+    private Integer parseInteger(Object value, Integer defaultValue) {
+        if (value == null) return defaultValue;
+        if (value instanceof Number) return ((Number) value).intValue();
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) return defaultValue;
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private String asNullableString(Object value) {
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     /**
@@ -2495,7 +2620,9 @@ public class TtRegisterService {
         try {
             // 跳过启动步骤，直接从ResetPhoneEnv开始（设备已经在运行）
             String logPrefix = formatLogPrefix(currentIndex, totalCount);
-            
+            // 某些调用链不会显式传 taskId，回退到 phoneId 作为停止标识键
+            String taskId = resetParams != null ? resetParams.getOrDefault("taskId", phoneId) : phoneId;
+
             // 1. 准备ResetPhoneEnv参数
             String country = resetParams.getOrDefault("country", "");
             if (country == null || country.isEmpty()) {
@@ -2538,8 +2665,26 @@ public class TtRegisterService {
             }
             log.info("{} {} - 使用IP渠道: dynamicIpChannel={}, staticIpChannel={}",
                     logPrefix, phoneId, dynamicIpChannel, staticIpChannel);
+
+            // 10.13 TTFarmResetPhone：dynamic_ip_channel_queue（逗号分隔）；resetParams.dynamicIpChannelQueue 可覆盖，默认与换机服务约定一致
+            String dynamicIpChannelQueue = resetParams != null ? resetParams.getOrDefault("dynamicIpChannelQueue", "").trim() : "";
+            if (dynamicIpChannelQueue.isEmpty()) {
+                dynamicIpChannelQueue = "lajiao,netnut_biu,ipbiubiu,kookeey";
+            }
+            String queueBeforeMerge = dynamicIpChannelQueue;
+            dynamicIpChannelQueue = mergeDynamicIpChannelIntoQueue(dynamicIpChannel, dynamicIpChannelQueue);
+            if (!dynamicIpChannelQueue.equals(queueBeforeMerge)) {
+                log.info("{} {} - dynamic_ip_channel={} 不在原 queue 中，已并入队首: {} -> {}",
+                        logPrefix, phoneId, dynamicIpChannel, queueBeforeMerge, dynamicIpChannelQueue);
+            }
             
             String biz = resetParams.getOrDefault("biz", "");
+            String xrayServerIp = resetParams.getOrDefault("xrayServerIp", "");
+            if (xrayServerIp == null || xrayServerIp.trim().isEmpty()) {
+                xrayServerIp = "192.168.41.84";
+            } else {
+                xrayServerIp = xrayServerIp.trim();
+            }
             
             // 2. 调用ResetPhoneEnv接口（合并reset和换机功能），带重试逻辑
             log.info("{} {} - 步骤1: 调用ResetPhoneEnv接口（reset+换机）", logPrefix, phoneId);
@@ -2598,10 +2743,10 @@ public class TtRegisterService {
                         }
                     }
 
-                    // 再获取信号量（并发上限），防止超过服务器最大并发能力
-                    // 同样用 tryAcquire(500ms) 轮询，确保停止信号能在 500ms 内被感知
+                    // 再获取并发许可（固定上限），防止超过服务器最大并发能力
+                    // 用 tryAcquire(500ms) 轮询，确保停止信号能在 500ms 内被感知
                     Semaphore semaphore = getResetPhoneEnvSemaphore(serverIp);
-                    log.debug("{} {} - 等待ResetPhoneEnv调用许可（服务器: {}，当前可用: {}）", logPrefix, phoneId, serverIp, semaphore.availablePermits());
+                    log.debug("{} {} - 等待ResetPhoneEnv调用许可（服务器: {}，可用: {}/{}）", logPrefix, phoneId, serverIp, semaphore.availablePermits(), maxResetPhoneEnvConcurrencyPerServer);
                     while (!semaphore.tryAcquire(500, TimeUnit.MILLISECONDS)) {
                         if (isTaskStopped(taskId)) {
                             return "STOPPED: 任务已停止（信号量等待中）";
@@ -2615,22 +2760,26 @@ public class TtRegisterService {
 
                         try {
                             // 10.7 网段仍调用 ResetPhoneEnv；10.13 网段改为调用 TTFarmResetPhone（xray_server_ip 暂写死）
-                            // 用 CompletableFuture + 超时保护：若 ResetPhoneEnv 卡住超过 8 分钟，立即放弃并释放信号量槽位，
-                            // 避免一台卡死的手机长期占用并发槽，拖累所有其他手机
+                            // 本地不再设置固定超时，统一交给被调用方超时策略处理
                             final String finalCountry = country;
                             final String finalSdk = sdk;
                             final String finalImagePath = imagePath;
                             final String finalGaidTag = gaidTag;
-                            final String finalDynamicIpChannel = dynamicIpChannel;
+                            // ipweb 渠道无 IP 池，换机时传 lajiao 让对方正常换机，换机完成后再由本地调整 xray 配置
+                            final String finalDynamicIpChannel = "ipweb".equalsIgnoreCase(dynamicIpChannel) ? "lajiao" : dynamicIpChannel;
+                            final String finalDynamicIpChannelQueue =
+                                    (serverIp != null && serverIp.startsWith("10.13.")) ? dynamicIpChannelQueue : "";
+                            final String finalXrayServerIp = xrayServerIp;
                             final String finalStaticIpChannel = staticIpChannel;
                             final String finalBiz = biz;
                             CompletableFuture<Map<String, Object>> resetFuture;
                             if (serverIp != null && serverIp.startsWith("10.13.")) {
                                 resetFuture = CompletableFuture.supplyAsync(() ->
                                     apiService.ttFarmResetPhone(
-                                            phoneId, serverIp, "192.168.41.84",
+                                            phoneId, serverIp, finalXrayServerIp,
                                             finalCountry, finalSdk, finalImagePath,
-                                            finalDynamicIpChannel, false
+                                            finalDynamicIpChannel, false,
+                                            finalDynamicIpChannelQueue
                                     ), sshCommandExecutor);
                             } else {
                                 resetFuture = CompletableFuture.supplyAsync(() ->
@@ -2641,13 +2790,7 @@ public class TtRegisterService {
                                     ), sshCommandExecutor);
                             }
                             try {
-                                resetResult = resetFuture.get(7, TimeUnit.MINUTES);
-                            } catch (java.util.concurrent.TimeoutException te) {
-                                resetFuture.cancel(true);
-                                long elapsed = System.currentTimeMillis() - apiCallStartTime;
-                                log.error("{} {} - ResetPhoneEnv调用超时（已等待 {}ms，超过7分钟上限），立即释放信号量槽位",
-                                        logPrefix, phoneId, elapsed);
-                                throw new RuntimeException("ResetPhoneEnv超时（>7min），phoneId=" + phoneId);
+                                resetResult = resetFuture.get();
                             } catch (java.util.concurrent.ExecutionException ee) {
                                 throw (ee.getCause() instanceof Exception)
                                         ? (Exception) ee.getCause() : new RuntimeException(ee.getCause());
@@ -2662,9 +2805,9 @@ public class TtRegisterService {
                             throw e;
                         }
                     } finally {
-                        // 释放信号量（确保无论是否异常都会释放）
+                        // 释放并发许可（确保无论是否异常都会释放）
                         semaphore.release();
-                        log.debug("{} {} - 释放ResetPhoneEnv调用许可（服务器: {}，当前可用: {}）", logPrefix, phoneId, serverIp, semaphore.availablePermits());
+                        log.debug("{} {} - 释放ResetPhoneEnv调用许可（服务器: {}，可用: {}/{}）", logPrefix, phoneId, serverIp, semaphore.availablePermits(), maxResetPhoneEnvConcurrencyPerServer);
                     }
                     
                     if (resetResult == null) {
@@ -2695,7 +2838,7 @@ public class TtRegisterService {
                                         retryCount++;
                                         continue; // 继续重试
                                     } else {
-                                        log.error("{} {} - ResetPhoneEnv重试{}次后仍失败: code={}, message={}", 
+                                        log.error("{} {} - ResetPhoneEnv重试{}次后仍失败: code={}, message={}",
                                                 logPrefix, phoneId, maxRetries, codeStr, message);
                                 maybeRequestCreateFarmOnGaidError(message);
                                 return "FAILED: ResetPhoneEnv失败 - " + message;
@@ -2750,7 +2893,7 @@ public class TtRegisterService {
                             break;
                         }
                     }
-                    
+
                     // 如果没有response_status或code，也认为成功（兼容性处理）
                     resetSuccess = true;
                     break;
@@ -2849,15 +2992,36 @@ public class TtRegisterService {
             if (userAgentObj != null) userAgent = userAgentObj.toString();
             Object brandObj = resetResult.get("brand");
             if (brandObj != null) brand = brandObj.toString();
-            log.info("{} {} - ResetPhoneEnv成功, real_ip={}, gaid={}, state={}, city={}, model={}, buildId={}, brand={}, 重试次数: {}",
-                    logPrefix, phoneId, realIp, gaid, state, city, model, buildId, brand, retryCount);
+            // 换机接口实际选用的动态 IP 渠道（存 tt_account_register.ip_channel 时用此值）
+            String resolvedDynamicIpChannel = null;
+            Object dynChObj = resetResult.get("dynamic_ip_channel");
+            if (dynChObj == null || dynChObj.toString().isBlank()) {
+                dynChObj = resetResult.get("dynamicIpChannel");
+            }
+            if ((dynChObj == null || dynChObj.toString().isBlank()) && resetResult.get("data") instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> dataMap = (Map<String, Object>) resetResult.get("data");
+                dynChObj = dataMap.get("dynamic_ip_channel");
+                if (dynChObj == null || dynChObj.toString().isBlank()) {
+                    dynChObj = dataMap.get("dynamicIpChannel");
+                }
+            }
+            if (dynChObj != null && !dynChObj.toString().isBlank()) {
+                resolvedDynamicIpChannel = dynChObj.toString().trim();
+            }
+            log.info("{} {} - ResetPhoneEnv成功, real_ip={}, gaid={}, state={}, city={}, model={}, buildId={}, brand={}, resolvedDynamicIpChannel={}, 重试次数: {}",
+                    logPrefix, phoneId, realIp, gaid, state, city, model, buildId, brand, resolvedDynamicIpChannel, retryCount);
 
             Thread.sleep(10000); // 等待reset和换机完成
 
-            // 2.4 如果是 MX 国家，调整该设备的 xray 动态代理为 gate1.ipweb.cc:7778 且随机 user
-            if ("MX".equalsIgnoreCase(country)) {
-                log.info("{} {} - 步骤2.4: 调整 MX 国家设备的 xray 动态代理配置", logPrefix, phoneId);
-                adjustXrayDynamicForMx(phoneId, serverIp);
+            // 2.4 如果任务配置了 ipweb 渠道，换机后在 xrayServerIP 上重新设置 dynamic 代理（ipweb 无 IP 池，需换机后手动配置）
+            if ("ipweb".equalsIgnoreCase(dynamicIpChannel)) {
+                log.info("{} {} - 步骤2.4: 任务渠道为 ipweb，调整设备 xray 动态代理配置（country={}）", logPrefix, phoneId, country);
+                boolean ipwebReady = adjustXrayDynamicForIpweb(phoneId, xrayServerIp, country);
+                if (ipwebReady) {
+                    resolvedDynamicIpChannel = "ipweb";
+                    log.info("{} {} - ipweb 动态代理调整成功，本轮 ip_channel 将使用 ipweb", logPrefix, phoneId);
+                }
             }
 
             // 2.5 可选：执行 change_after_reset.sh（如果存在）
@@ -2902,7 +3066,10 @@ public class TtRegisterService {
             context.setPhoneId(phoneId);
             context.setServerIp(serverIp);
             context.setSdk(sdk);
-            context.setDynamicIpChannel(dynamicIpChannel);
+            context.setDynamicIpChannel(
+                    resolvedDynamicIpChannel != null && !resolvedDynamicIpChannel.isEmpty()
+                            ? resolvedDynamicIpChannel
+                            : dynamicIpChannel);
             context.setStaticIpChannel(staticIpChannel);
             context.setRealIp(realIp);
             context.setGaid(gaid);
@@ -3568,17 +3735,17 @@ public class TtRegisterService {
                 scriptTimeoutMinutes, scriptPath, offerid, phoneId, phoneServerIpForScript, appiumServer, country, emailMode, adbPortParam);
             
             log.info("{} - 执行注册脚本: {} 在服务器 {} (超时: {}分钟, emailMode: {})", phoneId, scriptPath, scriptHost, scriptTimeoutMinutes, emailMode);
-            log.info("{} - 脚本参数: offerid={}, phoneId={}, phoneServerIp={}(原始serverIp={}), appiumServer={}, country={}, emailMode={}, adbPort={}", 
+            log.info("{} - 脚本参数: offerid={}, phoneId={}, phoneServerIp={}(原始serverIp={}), appiumServer={}, country={}, emailMode={}, adbPort={}",
                     phoneId, offerid, phoneId, phoneServerIpForScript, serverIp, appiumServer, country, emailMode, adbPortParam);
-            
+
             // 记录脚本开始执行时间
             long startTime = System.currentTimeMillis();
             LocalDateTime scriptStartTime = LocalDateTime.now();
             context.setScriptStartTime(scriptStartTime); // 设置到上下文
-            
+
             // 使用普通SSH执行方法
             SshUtil.SshResult registerResult = sshCommand(scriptHost, command);
-            
+
             // 记录脚本执行耗时
             long executionTime = System.currentTimeMillis() - startTime;
             log.info("{} - 注册脚本执行耗时: {} 秒", phoneId, executionTime / 1000);
@@ -4665,6 +4832,25 @@ public class TtRegisterService {
             sshProperties.getSshPassphrase(),
             command, 
             1800000, // 30分钟超时，比脚本超时20分钟更长，确保脚本有足够时间完成
+            sshProperties.getSshJumpHost(),
+            sshProperties.getSshJumpPort(),
+            sshProperties.getSshJumpUsername(),
+            sshProperties.getSshJumpPassword()
+        );
+    }
+
+    /**
+     * 统一SSH命令执行（显式指定用户名）
+     */
+    private SshUtil.SshResult sshCommand(String targetHost, String username, String command) {
+        return SshUtil.executeCommandWithPrivateKey(
+            targetHost,
+            22,
+            username,
+            sshProperties.getSshPrivateKey(),
+            sshProperties.getSshPassphrase(),
+            command,
+            1800000, // 30分钟超时
             sshProperties.getSshJumpHost(),
             sshProperties.getSshJumpPort(),
             sshProperties.getSshJumpUsername(),
@@ -6305,6 +6491,7 @@ public class TtRegisterService {
                 taskMap.put("gaidTag", task.getGaidTag());
                 taskMap.put("dynamicIpChannel", task.getDynamicIpChannel());
                 taskMap.put("staticIpChannel", task.getStaticIpChannel());
+                taskMap.put("xrayServerIp", task.getXrayServerIp());
                 taskMap.put("biz", task.getBiz());
                 taskMap.put("status", task.getStatus());
                 taskMap.put("createdAt", task.getCreatedAt() != null ? task.getCreatedAt().toString() : null);
@@ -6362,6 +6549,7 @@ public class TtRegisterService {
             taskMap.put("gaidTag", task.getGaidTag());
             taskMap.put("dynamicIpChannel", task.getDynamicIpChannel());
             taskMap.put("staticIpChannel", task.getStaticIpChannel());
+            taskMap.put("xrayServerIp", task.getXrayServerIp());
             taskMap.put("biz", task.getBiz());
             taskMap.put("status", task.getStatus());
             taskMap.put("createdAt", task.getCreatedAt() != null ? task.getCreatedAt().toString() : null);
@@ -6668,12 +6856,12 @@ public class TtRegisterService {
     }
 
     /**
-     * 针对 MX 国家，在宿主机上调整指定设备的 xray 动态代理配置为 gate1.ipweb.cc:7778，并重启 xray-${phoneId}
-     * - 配置文件路径：/home/ubuntu/xray/xray-conf/${phoneId}.json
+     * 换机后为 ipweb 渠道重新配置 xray dynamic 代理（ipweb 无 IP 池，换机后需手动写入配置并重启）。
+     * - 配置文件路径：/root/xray-conf/${phoneId}.json
      * - 只更新 outbounds 中 tag=dynamic 的第一个 server
-     * - user 使用 B_59206_MX___60_<8位随机字符串>
+     * - user 格式：B_59206_${COUNTRY}___60_<8位随机字符串>（国家码大写）
      */
-    private void adjustXrayDynamicForMx(String phoneId, String serverIp) {
+    private boolean adjustXrayDynamicForIpweb(String phoneId, String xrayServerIp, String country) {
         try {
             String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
             StringBuilder sb = new StringBuilder();
@@ -6682,9 +6870,10 @@ public class TtRegisterService {
                 sb.append(chars.charAt(random.nextInt(chars.length())));
             }
             String randSuffix = sb.toString();
-            String user = "B_59206_MX___60_" + randSuffix;
+            String countryUpper = country != null ? country.toUpperCase() : "US";
+            String user = "B_59206_" + countryUpper + "___60_" + randSuffix;
 
-            String confPath = "/home/ubuntu/xray/xray-conf/" + phoneId + ".json";
+            String confPath = "/root/xray-conf/" + phoneId + ".json";
             String cmd = String.format(
                 "conf='%s'; tmp=\"${conf}.tmp\"; " +
                 "if [ -f \"$conf\" ]; then " +
@@ -6698,16 +6887,21 @@ public class TtRegisterService {
                 confPath, user, phoneId, phoneId
             );
 
-            log.info("{} - 调整 MX 设备 xray 动态代理配置: {}", phoneId, cmd);
-            SshUtil.SshResult result = sshCommand(serverIp, cmd);
+            log.info("{} - 在 xrayServerIP={} 调整 ipweb 动态代理配置（country={}，user={}）", phoneId, xrayServerIp, countryUpper, user);
+            // xray 配置位于 /root/xray-conf，且需要重启 systemd 服务，固定使用 root 用户执行
+            SshUtil.SshResult result = sshCommand(xrayServerIp, "root", cmd);
             if (result.isSuccess()) {
                 log.info("{} - 调整 xray 动态代理并重启服务成功，输出: {}", phoneId, result.getOutput());
+                return true;
             } else {
-                log.warn("{} - 调整 xray 动态代理或重启服务失败: {}, 输出: {}",
-                        phoneId, result.getErrorMessage(), result.getOutput());
+                log.warn("{} - 调整 xray 动态代理或重启服务失败: errorMessage={}, exitCode={}, stdout={}, stderr={}",
+                        phoneId, result.getErrorMessage(), result.getExitCode(), result.getOutput(), result.getErrorOutput());
+                return false;
             }
         } catch (Exception e) {
-            log.error("{} - 调整 MX 设备 xray 动态代理配置异常", phoneId, e);
+            log.error("{} - 调整 ipweb 动态代理配置异常（country={}）", phoneId, country, e);
+            return false;
         }
     }
+
 }

@@ -429,12 +429,12 @@ public class StatisticsService {
 
             LocalDateTime dStart = d.atStartOfDay();
             LocalDateTime dEnd = d.atTime(23, 59, 59);
-            List<com.cpa.entity.TtAccountRegister> dayTwofaList =
-                    ttAccountRegisterRepository.list2faSuccessByDate(dStart, dEnd);
+            List<String> dayTrafficList =
+                    ttAccountRegisterRepository.listTrafficDataByDate(dStart, dEnd);
             double dayTraffic = 0.0;
-            if (dayTwofaList != null) {
-                for (com.cpa.entity.TtAccountRegister ar : dayTwofaList) {
-                    dayTraffic += parseTraffic(ar.getTrafficData());
+            if (dayTrafficList != null) {
+                for (String trafficData : dayTrafficList) {
+                    dayTraffic += parseTraffic(trafficData);
                 }
             }
             double dayAvg = twofa > 0 ? dayTraffic / twofa : 0.0;
@@ -668,16 +668,45 @@ public class StatisticsService {
         return list;
     }
 
+    /** null 表示不按国家过滤（含 ALL、空串） */
+    private String resolveCountryFilter(String country) {
+        if (country == null || country.isBlank()) {
+            return null;
+        }
+        String c = country.trim();
+        if ("ALL".equalsIgnoreCase(c)) {
+            return null;
+        }
+        return c;
+    }
+
+    private String displayCountryParam(String country) {
+        if (country == null || country.isBlank()) {
+            return "ALL";
+        }
+        return country.trim();
+    }
+
+    private static boolean blockedAsOf(com.cpa.entity.TtAccountRegister ar, LocalDateTime asOfEnd) {
+        if (ar.getBlockTime() == null) {
+            return false;
+        }
+        return !ar.getBlockTime().isAfter(asOfEnd);
+    }
+
     /**
      * 封号率统计：次日、3天、7天
-     * 基准日 = 2FA设置成功那天（created_at），统计该批账号中 block_time 不为空的比例
-     * @param queryDate 可选，查询基准日，不传则默认今天。次日/3天/7天均相对于此日计算
+     * cohort = 2FA 成功日（created_at 当日）；分子 = 截至 {@code queryDate} 当日结束已发生封号（block_time 非空且 ≤ 该时刻）
+     * @param queryDate 观察截止日，不传则默认今天
+     * @param country 国家，null/空/ALL 表示全量
      */
-    public Map<String, Object> getBlockRateStatistics(LocalDate queryDate) {
+    public Map<String, Object> getBlockRateStatistics(LocalDate queryDate, String country) {
         Map<String, Object> result = new HashMap<>();
         try {
             LocalDate today = queryDate != null ? queryDate : LocalDate.now();
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            LocalDateTime asOfEnd = today.atTime(23, 59, 59);
+            String countryFilter = resolveCountryFilter(country);
 
             Map<String, Object> data = new HashMap<>();
             Map<String, Long> blockedAndroidDist = new HashMap<>();
@@ -687,6 +716,7 @@ public class StatisticsService {
             Map<String, Long> blockedServerIpDist = new HashMap<>();
             Map<String, Map<String, Object>> blockedDetailByPeriod = new HashMap<>();
             data.put("queryDate", today.format(fmt));
+            data.put("country", displayCountryParam(country));
             data.put("lastUpdateTime", LocalDateTime.now());
 
             for (int daysAgo : new int[]{1, 3, 7}) {
@@ -694,8 +724,9 @@ public class StatisticsService {
                 LocalDateTime start = baseDate.atStartOfDay();
                 LocalDateTime end = baseDate.atTime(23, 59, 59);
 
-                long total = ttAccountRegisterRepository.count2faSuccessByDate(start, end);
-                long blocked = ttAccountRegisterRepository.countBlockedByDate(start, end);
+                long total = ttAccountRegisterRepository.count2faSuccessByDateRangeAndCountry(start, end, countryFilter);
+                long blocked = ttAccountRegisterRepository.count2faBlockedByDateRangeAndCountryAndBlockTimeLe(
+                        start, end, asOfEnd, countryFilter);
                 double rate = total > 0 ? Math.round((double) blocked / total * 10000.0) / 100.0 : 0;
 
                 String key = daysAgo == 1 ? "nextDay" : (daysAgo == 3 ? "threeDay" : "sevenDay");
@@ -707,11 +738,8 @@ public class StatisticsService {
                 item.put("label", daysAgo == 1 ? "次日封号率" : (daysAgo == 3 ? "3天封号率" : "7天封号率"));
                 data.put(key, item);
 
-                // 汇总三批（次日/3天/7天）中的封号账号分布详情
-                List<com.cpa.entity.TtAccountRegister> blockedList =
-                        ttAccountRegisterRepository.listBlocked2faByDate(start, end);
                 List<com.cpa.entity.TtAccountRegister> all2faList =
-                        ttAccountRegisterRepository.list2faSuccessByDate(start, end);
+                        ttAccountRegisterRepository.list2faSuccessByDateRangeAndCountry(start, end, countryFilter);
                 Map<String, Long> periodAndroidDist = new HashMap<>();
                 Map<String, Long> periodBehaviorDist = new HashMap<>();
                 Map<String, Long> periodTiktokDist = new HashMap<>();
@@ -722,21 +750,20 @@ public class StatisticsService {
                 Map<String, Long> periodTiktokTotalDist = new HashMap<>();
                 Map<String, Long> periodCountryTotalDist = new HashMap<>();
                 Map<String, Long> periodServerIpTotalDist = new HashMap<>();
-                for (com.cpa.entity.TtAccountRegister ar : blockedList) {
-                    inc(blockedAndroidDist, normalize(ar.getAndroidVersion(), "未知"));
-                    // 与今日详情保持一致：按行为原值统计分布
-                    inc(blockedBehaviorDist, normalize(ar.getBehavior(), "未知"));
-                    inc(blockedTiktokDist, normalize(ar.getTiktokVersion(), "未知"));
-                    inc(blockedCountryDist, normalize(ar.getCountry(), "未知"));
-                    inc(blockedServerIpDist, normalize(ar.getPhoneServerIp(), "未知"));
-
-                    inc(periodAndroidDist, normalize(ar.getAndroidVersion(), "未知"));
-                    inc(periodBehaviorDist, normalize(ar.getBehavior(), "未知"));
-                    inc(periodTiktokDist, normalize(ar.getTiktokVersion(), "未知"));
-                    inc(periodCountryDist, normalize(ar.getCountry(), "未知"));
-                    inc(periodServerIpDist, normalize(ar.getPhoneServerIp(), "未知"));
-                }
                 for (com.cpa.entity.TtAccountRegister ar : all2faList) {
+                    if (blockedAsOf(ar, asOfEnd)) {
+                        inc(blockedAndroidDist, normalize(ar.getAndroidVersion(), "未知"));
+                        inc(blockedBehaviorDist, normalize(ar.getBehavior(), "未知"));
+                        inc(blockedTiktokDist, normalize(ar.getTiktokVersion(), "未知"));
+                        inc(blockedCountryDist, normalize(ar.getCountry(), "未知"));
+                        inc(blockedServerIpDist, normalize(ar.getPhoneServerIp(), "未知"));
+
+                        inc(periodAndroidDist, normalize(ar.getAndroidVersion(), "未知"));
+                        inc(periodBehaviorDist, normalize(ar.getBehavior(), "未知"));
+                        inc(periodTiktokDist, normalize(ar.getTiktokVersion(), "未知"));
+                        inc(periodCountryDist, normalize(ar.getCountry(), "未知"));
+                        inc(periodServerIpDist, normalize(ar.getPhoneServerIp(), "未知"));
+                    }
                     inc(periodAndroidTotalDist, normalize(ar.getAndroidVersion(), "未知"));
                     inc(periodBehaviorTotalDist, normalize(ar.getBehavior(), "未知"));
                     inc(periodTiktokTotalDist, normalize(ar.getTiktokVersion(), "未知"));
@@ -777,25 +804,26 @@ public class StatisticsService {
     }
 
     /**
-     * 封号率最近7天趋势（与上面的卡片无关联，只看每天这批 2FA 成功账号的当前封号率）
-     * @param queryDate 可选，作为“今天”的参考，不传则默认当前日期
+     * 封号率最近7天趋势：各点 cohort 为过去7天中某一天注册且 2FA 成功，封号分子统一截至 {@code queryDate} 当日结束
      */
-    public Map<String, Object> getBlockRateTrend(LocalDate queryDate) {
+    public Map<String, Object> getBlockRateTrend(LocalDate queryDate, String country) {
         Map<String, Object> result = new HashMap<>();
         try {
             LocalDate today = queryDate != null ? queryDate : LocalDate.now();
             DateTimeFormatter iso = DateTimeFormatter.ofPattern("yyyy-MM-dd");
             DateTimeFormatter labelFmt = DateTimeFormatter.ofPattern("MM-dd");
+            LocalDateTime asOfEnd = today.atTime(23, 59, 59);
+            String countryFilter = resolveCountryFilter(country);
 
             List<Map<String, Object>> trend = new ArrayList<>();
-            // 最近7天：从6天前到今天（含），每一天看这批2FA成功账号当前封号率
             for (int i = 6; i >= 0; i--) {
                 LocalDate baseDate = today.minusDays(i);
                 LocalDateTime start = baseDate.atStartOfDay();
                 LocalDateTime end = baseDate.atTime(23, 59, 59);
 
-                long total = ttAccountRegisterRepository.count2faSuccessByDate(start, end);
-                long blocked = ttAccountRegisterRepository.countBlockedByDate(start, end);
+                long total = ttAccountRegisterRepository.count2faSuccessByDateRangeAndCountry(start, end, countryFilter);
+                long blocked = ttAccountRegisterRepository.count2faBlockedByDateRangeAndCountryAndBlockTimeLe(
+                        start, end, asOfEnd, countryFilter);
                 double rate = total > 0 ? Math.round((double) blocked / total * 10000.0) / 100.0 : 0;
 
                 Map<String, Object> item = new HashMap<>();
@@ -809,6 +837,7 @@ public class StatisticsService {
 
             Map<String, Object> data = new HashMap<>();
             data.put("queryDate", today.format(iso));
+            data.put("country", displayCountryParam(country));
             data.put("lastUpdateTime", LocalDateTime.now());
             data.put("trend", trend);
 
@@ -818,6 +847,80 @@ public class StatisticsService {
             log.error("获取封号率趋势统计失败", e);
             result.put("success", false);
             result.put("message", "获取封号率趋势统计失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * 回溯矩阵：每行 = 观察日 rowDate，每格 cohort = rowDate - offset；主指标截至 rowDate 日末，副指标「注册次日」截至 cohort+1 日末
+     */
+    public Map<String, Object> getBlockRateMatrix(LocalDate rangeStart, LocalDate rangeEnd, String country) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (rangeStart == null || rangeEnd == null) {
+                result.put("success", false);
+                result.put("message", "start 与 end 不能为空");
+                return result;
+            }
+            if (rangeStart.isAfter(rangeEnd)) {
+                result.put("success", false);
+                result.put("message", "start 不能晚于 end");
+                return result;
+            }
+            String countryFilter = resolveCountryFilter(country);
+            DateTimeFormatter iso = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            int[] offsets = new int[]{1, 3, 7, 14, 21, 30};
+
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (LocalDate rowDate = rangeStart; !rowDate.isAfter(rangeEnd); rowDate = rowDate.plusDays(1)) {
+                LocalDateTime asOfRowEnd = rowDate.atTime(23, 59, 59);
+                List<Map<String, Object>> cells = new ArrayList<>();
+                for (int offset : offsets) {
+                    LocalDate cohortDate = rowDate.minusDays(offset);
+                    LocalDateTime cStart = cohortDate.atStartOfDay();
+                    LocalDateTime cEnd = cohortDate.atTime(23, 59, 59);
+                    long total = ttAccountRegisterRepository.count2faSuccessByDateRangeAndCountry(cStart, cEnd, countryFilter);
+                    long blockedAsOfRow = ttAccountRegisterRepository.count2faBlockedByDateRangeAndCountryAndBlockTimeLe(
+                            cStart, cEnd, asOfRowEnd, countryFilter);
+                    double blockRateAsOfRow = total > 0
+                            ? Math.round((double) blockedAsOfRow / total * 10000.0) / 100.0
+                            : 0.0;
+                    LocalDateTime nextDayEnd = cohortDate.plusDays(1).atTime(23, 59, 59);
+                    long blockedNextDay = ttAccountRegisterRepository.count2faBlockedByDateRangeAndCountryAndBlockTimeLe(
+                            cStart, cEnd, nextDayEnd, countryFilter);
+                    double nextDayBlockRate = total > 0
+                            ? Math.round((double) blockedNextDay / total * 10000.0) / 100.0
+                            : 0.0;
+
+                    Map<String, Object> cell = new HashMap<>();
+                    cell.put("offset", offset);
+                    cell.put("cohortDate", cohortDate.format(iso));
+                    cell.put("total", total);
+                    cell.put("blockedAsOfRow", blockedAsOfRow);
+                    cell.put("blockRateAsOfRow", blockRateAsOfRow);
+                    cell.put("blockedNextDay", blockedNextDay);
+                    cell.put("nextDayBlockRate", nextDayBlockRate);
+                    cells.add(cell);
+                }
+                Map<String, Object> row = new HashMap<>();
+                row.put("rowDate", rowDate.format(iso));
+                row.put("cells", cells);
+                rows.add(row);
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("start", rangeStart.format(iso));
+            data.put("end", rangeEnd.format(iso));
+            data.put("country", displayCountryParam(country));
+            data.put("rows", rows);
+            data.put("lastUpdateTime", LocalDateTime.now());
+
+            result.put("success", true);
+            result.put("data", data);
+        } catch (Exception e) {
+            log.error("获取封号率矩阵失败", e);
+            result.put("success", false);
+            result.put("message", "获取封号率矩阵失败: " + e.getMessage());
         }
         return result;
     }
